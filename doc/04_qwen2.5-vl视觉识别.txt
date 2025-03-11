@@ -1,0 +1,103 @@
+1、使用dify页面测试✔✔✔
+    标注图片
+    输入Prompt：检测图像中的所有摩托车手，并以坐标形式返回他们的位置。输出格式应类似于{“bbox_2d”: [x1, y1, x2, y2], “label”: “motorcyclist”, “sub_label”: “not wearing helmat”}
+    ps:最好转成全英语，不然容易崩溃
+    Detect all motorcycle riders in the image and return their positions in coordinate form. The output format should be similar to {"bbox_2d": [x1, y1, x2, y2], "label": "motoryclist", "sub-label": "not wearing helmat"}
+
+    enable it
+    https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct/discussions/13
+
+2、使用脚本测试✔✔✔
+   #https://www.aivi.fyi/llms/deploy-Qwen2.5-VL 视觉参考
+   #https://github.com/QwenLM/Qwen2.5-VL 官方参考
+    pip install openai
+    '''
+from openai import OpenAI
+
+# 正确初始化 OpenAI 客户端
+client = OpenAI(
+    base_url="http://43.136.90.245:8000/v1",
+    api_key="test"
+)
+
+response = client.chat.completions.create(
+  model="Qwen/Qwen2.5-VL-3B-Instruct",
+  messages=[
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "What's in this image?"},
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "https://s3.amazonaws.com/cms.ipressroom.com/338/files/201808/5b894ee1a138352221103195_A680%7Ejogging-edit/A680%7Ejogging-edit_hero.jpg",
+          },
+        },
+      ],
+    }
+  ],
+  max_tokens=1024,
+)
+
+print(response.choices[0].message.content)
+-----------------------------------------------------------------------------------
+import base64
+from openai import OpenAI
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+# 初始化 OpenAI 客户端
+client = OpenAI(
+    base_url="http://43.136.90.245:8000/v1",
+    api_key="test"
+)
+
+# 本地图片路径
+image_path = "./dog.jpg"
+
+# 编码图片
+base64_image = encode_image(image_path)
+
+response = client.chat.completions.create(
+  model="Qwen/Qwen2.5-VL-3B-Instruct",
+  messages=[
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "What's in this image?"},
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": f"data:image/jpeg;base64,{base64_image}",
+          },
+        },
+      ],
+    }
+  ],
+  max_tokens=1024,
+)
+
+print(response.choices[0])
+
+    '''
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+参考：https://community.modelscope.cn/67a33a2382931a478c507df2.html
+      https://www.aivi.fyi/llms/deploy-Qwen2.5-VL 视频识别人脸
+

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Analysis</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+
+        .upload-area {
+            border: 2px dashed #e5e7eb;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.8);
+            /* 兼容不同浏览器的模糊效果 */
+            -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
+        }
+
+        .upload-area:hover {
+            border-color: #6366f1;
+            background: rgba(255, 255, 255, 0.9);
+            transform: translateY(-2px);
+        }
+
+        .analyzing {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .gradient-bg {
+            /* 增加对不同浏览器的支持 */
+            background: -webkit-linear-gradient(135deg, #6366f1 0%,#8b5cf6 100%);
+            background: linear-gradient(135deg, #6366f1 0%,#8b5cf6 100%);
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.8);
+            /* 兼容不同浏览器的模糊效果 */
+            -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .results-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .results-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .results-container::-webkit-scrollbar-thumb {
+            background: #c7d2fe;
+            border-radius: 4px;
+        }
+
+        .results-container::-webkit-scrollbar-thumb:hover {
+            background: #818cf8;
+        }
+    </style>
+</head>
+<body class="min-h-screen py-8">
+    <div class="max-w-4xl mx-auto px-4">
+        <div class="glass-card rounded-2xl shadow-xl overflow-hidden">
+            <div class="gradient-bg px-6 py-4">
+                <h1 class="text-2xl font-semibold text-white">Video Object Detection</h1>
+                <p class="text-indigo-100 text-sm mt-1">Upload a video and find specific objects within it</p>
+            </div>
+
+            <div class="p-6">
+                <form id="uploadForm" class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Upload Video</label>
+                        <div class="upload-area rounded-xl p-8 cursor-pointer" id="uploadArea">
+                            <div id="uploadText" class="text-center">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4-4m4-4h.01" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                                <p class="mt-4 text-sm text-gray-600">Click or drag video to upload</p>
+                            </div>
+                            <input type="file" id="videoInput" accept="video/*" class="hidden">
+                        </div>
+                        <p class="mt-2 text-sm text-gray-500" id="fileInfo"></p>
+                    </div>
+
+                    <div>
+                        <label for="objectInput" class="block text-sm font-medium text-gray-700 mb-2">Object to Find</label>
+                        <input type="text"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                               id="objectInput"
+                               placeholder="e.g., 'a person wearing red shirt'">
+                    </div>
+
+                    <div class="alert-danger hidden rounded-lg bg-red-50 p-4 text-red-700" id="errorAlert"></div>
+
+                    <button type="submit"
+                            class="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all"
+                            id="analyzeBtn">
+                        Start Analysis
+                    </button>
+                </form>
+
+                <div id="statusText" class="text-center mt-6 hidden">
+                    <div class="inline-flex items-center px-4 py-2 bg-indigo-100 text-indigo-700 rounded-full analyzing">
+                        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Analyzing video...
+                    </div>
+                </div>
+
+                <div class="results-container mt-6 space-y-4 max-h-[600px] overflow-y-auto pr-2" id="resultsContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadArea = document.getElementById('uploadArea');
+            const videoInput = document.getElementById('videoInput');
+            const uploadForm = document.getElementById('uploadForm');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const statusText = document.getElementById('statusText');
+            const errorAlert = document.getElementById('errorAlert');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const fileInfo = document.getElementById('fileInfo');
+
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('border-indigo-500', 'bg-indigo-50');
+            });
+
+            uploadArea.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('border-indigo-500', 'bg-indigo-50');
+            });
+
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('border-indigo-500', 'bg-indigo-50');
+                const files = e.dataTransfer.files;
+                if (files.length) {
+                    videoInput.files = files;
+                    updateFileInfo(files[0]);
+                }
+            });
+
+            uploadArea.addEventListener('click', () => {
+                videoInput.click();
+            });
+
+            videoInput.addEventListener('change', (e) => {
+                if (e.target.files.length) {
+                    updateFileInfo(e.target.files[0]);
+                }
+            });
+
+            function updateFileInfo(file) {
+                fileInfo.textContent = `Selected file: ${file.name}`;
+                fileInfo.classList.add('text-indigo-600');
+            }
+
+            function showError(message) {
+                errorAlert.textContent = message;
+                errorAlert.classList.remove('hidden');
+            }
+
+            function displayFrame(frame) {
+                const frameEl = document.createElement('div');
+                frameEl.className = 'glass-card rounded-xl overflow-hidden';
+                frameEl.innerHTML = `
+                    <div class="p-4 border-b border-gray-100">
+                        <h3 class="font-medium text-gray-900">Frame at ${frame.second} seconds</h3>
+                    </div>
+                    <div class="p-4">
+                        <img src="${frame.frame_path}" alt="Frame ${frame.second}" class="w-full rounded-lg">
+                        <p class="mt-4 text-gray-700">${frame.description || 'No description available'}</p>
+                        <div class="mt-4 flex items-center justify-between text-sm text-gray-500">
+                            <span>Confidence: ${frame.confidence}/10</span>
+                            <span class="px-2 py-1 rounded-full ${frame.is_match ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}">
+                                ${frame.is_match ? 'Match' : 'No Match'}
+                            </span>
+                        </div>
+                    </div>
+                `;
+                resultsContainer.insertBefore(frameEl, resultsContainer.firstChild);
+            }
+
+            uploadForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const video = videoInput.files[0];
+                const objectStr = document.getElementById('objectInput').value;
+
+                if (!video || !objectStr) {
+                    showError('Please provide both video file and object description');
+                    return;
+                }
+
+                try {
+                    errorAlert.classList.add('hidden');
+                    statusText.classList.remove('hidden');
+                    analyzeBtn.disabled = true;
+                    analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    resultsContainer.innerHTML = '';
+
+                    const formData = new FormData();
+                    formData.append('video', video);
+                    formData.append('object_str', objectStr);
+
+                    const response = await fetch('/analyze', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+
+                    while (true) {
+                        const {value, done} = await reader.read();
+                        if (done) break;
+
+                        const text = decoder.decode(value);
+                        const results = text.split('\n').filter(line => line.trim());
+
+                        for (const result of results) {
+                            try {
+                                const data = JSON.parse(result);
+                                if (data.status === 'success' && data.frame) {
+                                    displayFrame(data.frame);
+                                }
+                            } catch (e) {
+                                console.error('Error parsing result:', e);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    showError('An error occurred during analysis');
+                    console.error('Error:', error);
+                } finally {
+                    statusText.classList.add('hidden');
+                    analyzeBtn.disabled = false;
+                    analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

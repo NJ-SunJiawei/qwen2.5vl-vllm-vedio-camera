@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Analysis</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 5px;
+            padding: 20px;
+            text-align: center;
+            background: #f8f9fa;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        .upload-area:hover {
+            border-color: #0d6efd;
+            background: #f1f3f5;
+        }
+        .results-container {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .frame-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .analyzing {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title mb-0">Video Object Detection</h3>
+                    </div>
+                    <div class="card-body">
+                        <form id="uploadForm">
+                            <div class="mb-3">
+                                <label class="form-label">Upload Video</label>
+                                <div class="upload-area" id="uploadArea">
+                                    <div id="uploadText">
+                                        <p class="mb-0">Click or drag video to upload</p>
+                                    </div>
+                                    <input type="file" id="videoInput" accept="video/*" class="d-none">
+                                </div>
+                                <small class="text-muted" id="fileInfo"></small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="objectInput" class="form-label">Object to Find</label>
+                                <input type="text" class="form-control" id="objectInput"
+                                       placeholder="e.g., 'a person wearing red shirt'">
+                            </div>
+
+                            <div class="alert alert-danger d-none" id="errorAlert"></div>
+
+                            <button type="submit" class="btn btn-primary w-100" id="analyzeBtn">
+                                Start Analysis
+                            </button>
+                        </form>
+
+                        <div id="statusText" class="text-center mt-3 d-none">
+                            <p class="analyzing">Analyzing video...</p>
+                        </div>
+
+                        <div class="results-container mt-4" id="resultsContainer"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadArea = document.getElementById('uploadArea');
+            const videoInput = document.getElementById('videoInput');
+            const uploadForm = document.getElementById('uploadForm');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const statusText = document.getElementById('statusText');
+            const errorAlert = document.getElementById('errorAlert');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const fileInfo = document.getElementById('fileInfo');
+
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.style.borderColor = '#0d6efd';
+            });
+
+            uploadArea.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                uploadArea.style.borderColor = '#ccc';
+            });
+
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.style.borderColor = '#ccc';
+                const files = e.dataTransfer.files;
+                if (files.length) {
+                    videoInput.files = files;
+                    updateFileInfo(files[0]);
+                }
+            });
+
+            uploadArea.addEventListener('click', () => {
+                videoInput.click();
+            });
+
+            videoInput.addEventListener('change', (e) => {
+                if (e.target.files.length) {
+                    updateFileInfo(e.target.files[0]);
+                }
+            });
+
+            function updateFileInfo(file) {
+                fileInfo.textContent = `Selected file: ${file.name}`;
+            }
+
+            function showError(message) {
+                errorAlert.textContent = message;
+                errorAlert.classList.remove('d-none');
+            }
+
+            function displayFrame(frame) {
+                const frameCard = document.createElement('div');
+                frameCard.className = 'card mb-3';
+                frameCard.innerHTML = `
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Frame at ${frame.second} seconds</h5>
+                    </div>
+                    <div class="card-body">
+                        <img src="${frame.frame_path}" alt="Frame ${frame.second}" class="frame-image">
+                        <p class="card-text">${frame.description || 'No description available'}</p>
+                        <p class="card-text">
+                            <small class="text-muted">Confidence: ${frame.confidence}/10</small>
+                            <small class="text-muted float-end">Match: ${frame.is_match ? 'Yes' : 'No'}</small>
+                        </p>
+                    </div>
+                `;
+                resultsContainer.insertBefore(frameCard, resultsContainer.firstChild);
+            }
+
+            uploadForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const video = videoInput.files[0];
+                const objectStr = document.getElementById('objectInput').value;
+
+                if (!video || !objectStr) {
+                    showError('Please provide both video file and object description');
+                    return;
+                }
+
+                try {
+                    errorAlert.classList.add('d-none');
+                    statusText.classList.remove('d-none');
+                    analyzeBtn.disabled = true;
+                    resultsContainer.innerHTML = '';
+
+                    const formData = new FormData();
+                    formData.append('video', video);
+                    formData.append('object_str', objectStr);
+
+                    const response = await fetch('/analyze', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+
+                    while (true) {
+                        const {value, done} = await reader.read();
+                        if (done) break;
+
+                        const text = decoder.decode(value);
+                        const results = text.split('\n').filter(line => line.trim());
+
+                        for (const result of results) {
+                            try {
+                                const data = JSON.parse(result);
+                                if (data.status === 'success' && data.frame) {
+                                    displayFrame(data.frame);
+                                }
+                            } catch (e) {
+                                console.error('Error parsing result:', e);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    showError('An error occurred during analysis');
+                    console.error('Error:', error);
+                } finally {
+                    statusText.classList.add('d-none');
+                    analyzeBtn.disabled = false;
+                }
+            });
+        });
+    </script>
+</body>
+</html>
