@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>Video Analysis</title>
-    <!-- 添加版本号避免缓存影响 -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css?v=1.0" rel="stylesheet">
 </head>
 <body class="p-6">
@@ -12,9 +11,14 @@
     <!-- 上传表单 -->
     <form id="uploadForm">
         <input type="file" id="videoInput" accept="video/*" class="border p-2 rounded">
-        <input type="text" id="objectInput" placeholder="输入要检测的对象" class="border p-2 rounded">
-        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">上传并分析</button>
+        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">上传视频</button>
     </form>
+
+    <!-- 分析按钮 -->
+    <div id="analyzeSection" class="mt-4 hidden">
+        <input type="text" id="objectInput" placeholder="输入要检测的对象" class="border p-2 rounded">
+        <button id="analyzeButton" class="bg-green-500 text-white px-4 py-2 rounded">开始分析</button>
+    </div>
 
     <!-- 视频播放器和画布 -->
     <div class="mt-6 relative">
@@ -109,23 +113,58 @@
             }
         }
 
-        // 表单提交事件
+        // 表单提交事件（上传视频）
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             console.log("Form submitted");  // 调试日志
 
             const formData = new FormData();
             formData.append('video', document.getElementById('videoInput').files[0]);
-            formData.append('object_str', document.getElementById('objectInput').value);
 
             try {
-                const response = await fetch('/analyze', { method: 'POST', body: formData });
+                const response = await fetch('/upload', { method: 'POST', body: formData });
                 if (!response.ok) {
                     throw new Error("Network response was not ok");
                 }
-                console.log("Video uploaded and analysis started");  // 调试日志
+                const result = await response.json();
+                console.log("Video uploaded successfully");  // 调试日志
+                // 显示分析部分
+                document.getElementById('analyzeSection').classList.remove('hidden');
+                // 保存文件名
+                document.getElementById('analyzeButton').dataset.filename = result.filename;
             } catch (error) {
                 console.error("Error during video upload:", error);
+            }
+        });
+
+        // 分析按钮点击事件
+        document.getElementById('analyzeButton').addEventListener('click', async () => {
+            const objectStr = document.getElementById('objectInput').value;
+            if (!objectStr) {
+                alert("请输入要检测的对象");
+                return;
+            }
+
+            const filename = document.getElementById('analyzeButton').dataset.filename;
+            if (!filename) {
+                alert("请先上传视频");
+                return;
+            }
+
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ object_str: objectStr, filename: filename })
+                });
+                if (!response.ok) {
+                    throw new Error("Network response was not ok");
+                }
+                console.log("Analysis started");  // 调试日志
+            } catch (error) {
+                console.error("Error during analysis:", error);
             }
         });
     </script>

@@ -1,6 +1,7 @@
-from fastapi import FastAPI, WebSocket, UploadFile, File, Request
+from fastapi import FastAPI, WebSocket, UploadFile, File, Request, Body
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 import asyncio
 import cv2
 import json
@@ -33,6 +34,11 @@ frame_queue = asyncio.Queue(maxsize=QUEUE_SIZE)
 # 上传文件保存目录
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)  # 确保上传目录存在
+
+# 定义分析请求体模型
+class AnalyzeRequest(BaseModel):
+    object_str: str
+    filename: str
 
 async def analyze_frame(frame_np: np.ndarray, object_str: str):
     """ 直接使用 `numpy` 数组进行目标检测，无需写入 `.jpg` """
@@ -125,17 +131,30 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"WebSocket error: {e}")  # 调试日志
         clients.remove(websocket)
 
-@app.post("/analyze")
-async def analyze_video(video: UploadFile = File(...), object_str: str = "object"):
-    """ 处理视频上传并启动分析 """
-    print("Video uploaded, starting analysis...")  # 调试日志
+@app.post("/upload")
+async def upload_video(video: UploadFile = File(...)):
+    """ 处理视频上传 """
+    print("Video uploaded, saving...")  # 调试日志
 
     # 保存上传的视频文件
     video_path = UPLOAD_DIR / video.filename
     with open(video_path, "wb") as buffer:
         shutil.copyfileobj(video.file, buffer)
 
+    return {"status": "success", "message": "视频上传成功", "filename": video.filename}
+
+@app.post("/analyze")
+async def analyze_video(request: AnalyzeRequest):
+    """ 处理视频分析 """
+    object_str = request.object_str
+    filename = request.filename
+    print(f"Starting analysis for object: {object_str}")  # 调试日志
+
     # 使用 OpenCV 读取视频文件
+    video_path = UPLOAD_DIR / filename  # 使用上传的文件名
+    if not video_path.exists():
+        return {"status": "error", "message": "视频文件不存在"}
+
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         return {"status": "error", "message": "无法打开视频文件"}
@@ -159,7 +178,7 @@ async def analyze_video(video: UploadFile = File(...), object_str: str = "object
 
     cap.release()
     os.remove(video_path)  # 删除上传的视频文件
-    return {"status": "processing", "message": "视频上传成功，分析中..."}
+    return {"status": "processing", "message": "视频分析中..."}
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
