@@ -1,3 +1,5 @@
+#pip install -r requirements.tx
+
 from fastapi import FastAPI, WebSocket, UploadFile, File, Request, Body
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
@@ -97,10 +99,12 @@ async def frame_worker():
         base64_frame = base64.b64encode(buffer).decode('utf-8')
 
         # 根据 FRAME_SKIP 抽检帧
-        if frame_id % FRAME_SKIP == 0:
-            result = await analyze_frame(frame_np, object_str)
-        else:
-            result = {"bbox": [], "label": object_str}  # 未抽检的帧不进行检测
+#        if frame_id % FRAME_SKIP == 0:
+#            result = await analyze_frame(frame_np, object_str)
+#        else:
+#            result = {"bbox": [], "label": object_str}  # 未抽检的帧不进行检测
+
+        result = {"bbox": [], "label": object_str}
 
         # 发送 WebSocket 更新
         message = json.dumps({
@@ -160,7 +164,7 @@ async def analyze_video(request: AnalyzeRequest):
         return {"status": "error", "message": "无法打开视频文件"}
 
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    target_fps = 5  # 目标帧率
+    target_fps = 1  # 目标帧率
     frame_interval = max(1, fps // target_fps)  # 计算帧间隔
     print(f"ori_fps: {fps}")
     print(f"target_fps: {target_fps}")
