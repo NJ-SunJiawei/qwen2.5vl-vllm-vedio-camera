@@ -27,7 +27,7 @@ client = OpenAI(
 clients = set()
 
 # 帧处理参数
-FRAME_SKIP = 40  # 每 10 帧抽检一次（根据实际情况调整）
+FRAME_SKIP = 50  # 每 10 帧抽检一次（根据实际情况调整）
 QUEUE_SIZE = 1000  # 最大缓存 100 帧
 frame_queue = asyncio.Queue(maxsize=QUEUE_SIZE)
 
@@ -160,8 +160,10 @@ async def analyze_video(request: AnalyzeRequest):
         return {"status": "error", "message": "无法打开视频文件"}
 
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    target_fps = 10  # 目标帧率
+    target_fps = 5  # 目标帧率
     frame_interval = max(1, fps // target_fps)  # 计算帧间隔
+    print(f"ori_fps: {fps}")
+    print(f"target_fps: {target_fps}")
 
     frame_id, second = 0, 0
     while cap.isOpened():
