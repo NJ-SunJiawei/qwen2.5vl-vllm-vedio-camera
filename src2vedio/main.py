@@ -11,6 +11,7 @@ from openai import OpenAI
 from pathlib import Path
 import shutil
 import os
+import time
 from multiprocessing import Process, Queue
 
 app = FastAPI()
@@ -27,9 +28,12 @@ client = OpenAI(
 # WebSocket 客户端存储
 clients = set()
 
-# 帧处理参数
-FRAME_SKIP = 50  # 每 10 帧抽检一次（根据实际情况调整）
-QUEUE_SIZE = 1000  # 最大缓存 1000 帧
+# 参数设置
+TARGET_FPS = 20          # 分析帧率
+FRAME_SKIP = 50          # 每处理5帧做一次检测
+TARGET_SEND_FPS = 20     # WebSocket 发送帧率控制
+
+last_send_time = time.time()
 frame_queue = asyncio.Queue() #asyncio.Queue(maxsize=QUEUE_SIZE)
 ordered_result_queue = asyncio.Queue()  # 用于存储处理结果
 
@@ -125,15 +129,18 @@ async def frame_worker():
         frame_queue.task_done()
 
 async def send_results():
-    """ 直接发送队列中的帧结果 """
+    """发送结果（新增帧率控制）"""
+    global last_send_time
     while True:
         if not ordered_result_queue.empty():
-            frame_id, binary_frame, result = await ordered_result_queue.get()
-            print(f"Sending frame {frame_id} from queue")
-            for client in clients:
-                await client.send_bytes(binary_frame)
-                await client.send_json(result)
-        await asyncio.sleep(0.01)
+            now = time.time()
+            if now - last_send_time >= 1/TARGET_SEND_FPS:
+                frame_id, binary_frame, result = await ordered_result_queue.get()
+                for client in clients:
+                    await client.send_bytes(binary_frame)
+                    await client.send_json(result)
+                last_send_time = now
+        await asyncio.sleep(0.001)
 
 @app.on_event("startup")
 async def startup_event():
@@ -173,7 +180,7 @@ async def analyze_video(request: AnalyzeRequest):
         return {"status": "error", "message": "无法打开视频文件"}
 
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    target_fps = 20 #如果原视频 FPS 是 30，而目标是 10，则 frame_interval = 30 // 10 = 3，意味着每 3 帧采样一帧，从而达到降帧处理的目的
+    target_fps = TARGET_FPS #如果原视频 FPS 是 30，而目标是 10，则 frame_interval = 30 // 10 = 3，意味着每 3 帧采样一帧，从而达到降帧处理的目的
     frame_interval = max(1, fps // target_fps)
     print(f"ori_fps: {fps}")
     print(f"target_fps: {target_fps}")
