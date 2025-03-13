@@ -128,6 +128,7 @@ async def frame_worker():
         print(f"Frame {frame_id} processed. Queue size: {ordered_result_queue.qsize()}")
         frame_queue.task_done()
 
+'''
 async def send_results():
     """发送结果（新增帧率控制）"""
     global last_send_time
@@ -141,6 +142,21 @@ async def send_results():
                     await client.send_json(result)
                 last_send_time = now
         await asyncio.sleep(0.001)
+'''
+
+async def send_results():
+    interval = 1 / TARGET_SEND_FPS
+    while True:
+        start_time = time.time()
+        if not ordered_result_queue.empty():
+            frame_id, binary_frame, result = await ordered_result_queue.get()
+            for client in clients:
+                await client.send_bytes(binary_frame)
+                await client.send_json(result)
+        processing_time = time.time() - start_time
+        sleep_time = max(0, interval - processing_time)
+        await asyncio.sleep(sleep_time)
+
 
 @app.on_event("startup")
 async def startup_event():
