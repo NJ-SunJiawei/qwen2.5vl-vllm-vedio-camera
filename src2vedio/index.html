@@ -27,7 +27,7 @@
     </div>
 
     <script>
-        // WebSocket 连接
+        // 建立 WebSocket 连接
         let ws = new WebSocket(`ws://${window.location.host}/ws`);
 
         // 获取 DOM 元素
@@ -36,101 +36,68 @@
         const videoCtx = videoCanvas.getContext('2d');
         const overlayCtx = overlayCanvas.getContext('2d');
 
-        let lastFrameTime = 0;
-        const frameInterval = 1000 / 10;  // 目标帧率：10 FPS
-
-        // WebSocket 连接事件
-        ws.onopen = () => {
-            console.log("WebSocket connected");
-        };
-
-        // WebSocket 消息事件
-        ws.onmessage = (event) => {
-            const currentTime = performance.now();
-            if (currentTime - lastFrameTime >= frameInterval) {
-                lastFrameTime = currentTime;
-
-                console.log("Received WebSocket message:", event.data);  // 调试日志
-                const data = JSON.parse(event.data);
-                const frame = data.frame;  // 获取 base64 帧
-                const bbox = data.bbox;  // 获取 bbox
-                const label = data.label;  // 获取 label
-
-                // 将 base64 帧绘制到 videoCanvas 上
+        // WebSocket 消息事件处理
+        ws.onmessage = async (event) => {
+            // 如果消息是二进制，则作为视频帧处理
+            if (event.data instanceof Blob) {
+                const blob = event.data;
+                const url = URL.createObjectURL(blob);
                 const img = new Image();
-                img.src = `data:image/jpeg;base64,${frame}`;
+                img.src = url;
                 img.onload = () => {
                     videoCanvas.width = img.width;
                     videoCanvas.height = img.height;
                     overlayCanvas.width = img.width;
                     overlayCanvas.height = img.height;
                     videoCtx.drawImage(img, 0, 0, img.width, img.height);
-
-                    // 绘制绿框和 label（如果有）
-                    if (bbox && bbox.length === 4) {
-                        drawBoundingBoxes({
-                            bbox: bbox,
-                            label: label
-                        });
-                    } else {
-                        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);  // 清空画布
-                    }
                 };
+            } else {
+                // 如果消息是文本，则解析为 JSON 并绘制绿框
+                let jsonStr;
+                if (typeof event.data === "string") {
+                    jsonStr = event.data;
+                } else if (event.data.text) {
+                    jsonStr = await event.data.text();
+                }
+                try {
+                    const data = JSON.parse(jsonStr);
+                    console.log("Received result:", data);
+                    drawBoundingBoxes(data);
+                } catch (error) {
+                    console.error("Failed to parse JSON:", error);
+                }
             }
         };
 
-        // WebSocket 错误事件
-        ws.onerror = (error) => {
-            console.error("WebSocket error:", error);
-        };
-
-        // WebSocket 关闭事件
-        ws.onclose = () => {
-            console.log("WebSocket disconnected");
-            // 尝试重连
-            setTimeout(() => {
-                ws = new WebSocket(`ws://${window.location.host}/ws`);
-            }, 1000);
-        };
-
-        // 绘制绿框和 label
+        // 绘制边界框和 label 的函数
         function drawBoundingBoxes(data) {
-            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);  // 每次绘制前清空画布
-
-            if (data.bbox && data.bbox.length === 4) {  // 如果有 bbox 数据
-                const [x1, y1, x2, y2] = data.bbox;  // 解析 bbox 坐标
-                const label = data.label;  // 获取 label
-
-                // 绘制绿框
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            if (data.bbox && data.bbox.length === 4) {
+                const [x1, y1, x2, y2] = data.bbox;
+                const label = data.label;
                 overlayCtx.strokeStyle = "green";
                 overlayCtx.lineWidth = 2;
                 overlayCtx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-
-                // 绘制 label
                 overlayCtx.font = "14px Arial";
                 overlayCtx.fillStyle = "green";
-                overlayCtx.fillText(label, x1, y1 - 5);  // 在框的上方显示 label
+                overlayCtx.fillText(label, x1, y1 - 5);
             }
         }
 
         // 表单提交事件（上传视频）
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            console.log("Form submitted");  // 调试日志
-
+            console.log("Form submitted");
             const formData = new FormData();
             formData.append('video', document.getElementById('videoInput').files[0]);
-
             try {
                 const response = await fetch('/upload', { method: 'POST', body: formData });
                 if (!response.ok) {
                     throw new Error("Network response was not ok");
                 }
                 const result = await response.json();
-                console.log("Video uploaded successfully");  // 调试日志
-                // 显示分析部分
+                console.log("Video uploaded successfully");
                 document.getElementById('analyzeSection').classList.remove('hidden');
-                // 保存文件名
                 document.getElementById('analyzeButton').dataset.filename = result.filename;
             } catch (error) {
                 console.error("Error during video upload:", error);
@@ -144,25 +111,21 @@
                 alert("请输入要检测的对象");
                 return;
             }
-
             const filename = document.getElementById('analyzeButton').dataset.filename;
             if (!filename) {
                 alert("请先上传视频");
                 return;
             }
-
             try {
                 const response = await fetch('/analyze', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ object_str: objectStr, filename: filename })
                 });
                 if (!response.ok) {
                     throw new Error("Network response was not ok");
                 }
-                console.log("Analysis started");  // 调试日志
+                console.log("Analysis started");
             } catch (error) {
                 console.error("Error during analysis:", error);
             }

@@ -1,6 +1,4 @@
-#pip install -r requirements.tx
-
-from fastapi import FastAPI, WebSocket, UploadFile, File, Request, Body
+from fastapi import FastAPI, WebSocket, UploadFile, File, Request
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -13,6 +11,7 @@ from openai import OpenAI
 from pathlib import Path
 import shutil
 import os
+from multiprocessing import Process, Queue
 
 app = FastAPI()
 
@@ -32,10 +31,11 @@ clients = set()
 FRAME_SKIP = 50  # 每 10 帧抽检一次（根据实际情况调整）
 QUEUE_SIZE = 1000  # 最大缓存 100 帧
 frame_queue = asyncio.Queue(maxsize=QUEUE_SIZE)
+ordered_result_queue = asyncio.Queue()  # 用于存储处理结果
 
 # 上传文件保存目录
 UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)  # 确保上传目录存在
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 # 定义分析请求体模型
 class AnalyzeRequest(BaseModel):
@@ -43,8 +43,8 @@ class AnalyzeRequest(BaseModel):
     filename: str
 
 async def analyze_frame(frame_np: np.ndarray, object_str: str):
-    """ 直接使用 `numpy` 数组进行目标检测，无需写入 `.jpg` """
-    _, buffer = cv2.imencode(".jpg", frame_np, [int(cv2.IMWRITE_JPEG_QUALITY), 50])  # 压缩质量为 50
+    """ 使用 numpy 数组进行目标检测，无需写入 .jpg 文件 """
+    _, buffer = cv2.imencode(".jpg", frame_np, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
     base64_image = base64.b64encode(buffer).decode('utf-8')
 
     prompt_str = f"""
@@ -54,118 +54,127 @@ async def analyze_frame(frame_np: np.ndarray, object_str: str):
     If the object is not found, return an empty bbox_2d.
     """
 
-    print("Sending request to OpenAI...")  # 调试日志
+    print("Sending request to OpenAI...")
     try:
         response = await asyncio.to_thread(
             client.chat.completions.create,
             model="Qwen/Qwen2.5-VL-3B-Instruct",
-            messages=[{"role": "user", "content": [{"type": "text", "text": prompt_str},
-                                                   {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}]}],
+            messages=[{"role": "user", "content": [
+                        {"type": "text", "text": prompt_str},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                    ]}],
             max_tokens=1024,
         )
 
         response_text = response.choices[0].message.content
-        print("OpenAI response:", response_text)  # 调试日志
-
-        # 预处理响应文本
-        response_text = response_text.strip()  # 去除首尾空白字符
+        print("OpenAI response:", response_text)
+        response_text = response_text.strip()
         if response_text.startswith("```json") and response_text.endswith("```"):
-            response_text = response_text[7:-3].strip()  # 去除 ```json 和 ```
-
-        # 尝试解析 JSON
+            response_text = response_text[7:-3].strip()
         try:
             data = json.loads(response_text)
-            if isinstance(data, list):  # 如果返回的是数组，取第一个元素
+            if isinstance(data, list):
                 data = data[0]
             return {
-                "bbox": data.get("bbox_2d", []),  # 返回 bbox_2d
-                "label": data.get("label", object_str)  # 返回 label
+                "bbox": data.get("bbox_2d", []),
+                "label": data.get("label", object_str)
             }
         except json.JSONDecodeError as e:
             print(f"JSON decode error: {e}")
-            return {"bbox": [], "label": object_str}  # 返回空 bbox 和默认 label
+            return {"bbox": [], "label": object_str}
     except Exception as e:
         print(f"Error during analysis: {e}")
-        return {"bbox": [], "label": object_str}  # 返回空 bbox 和默认 label
+        return {"bbox": [], "label": object_str}
+
+def process_frame(frame_np, object_str, result_queue):
+    """ 进程中处理帧 """
+    result = asyncio.run(analyze_frame(frame_np, object_str))
+    result_queue.put(result)
+
+def process_frame_wrapper(frame_np, object_str):
+    """ 同步包装进程调用 """
+    result_queue = Queue()
+    process = Process(target=process_frame, args=(frame_np, object_str, result_queue))
+    process.start()
+    process.join()
+    return result_queue.get()
 
 async def frame_worker():
     """ 处理队列中的帧 """
+    loop = asyncio.get_running_loop()
     while True:
         frame_info = await frame_queue.get()
         frame_np, object_str, second, frame_id = frame_info
 
-        # 将帧转换为 base64
-        _, buffer = cv2.imencode(".jpg", frame_np, [int(cv2.IMWRITE_JPEG_QUALITY), 50])  # 压缩质量为 50
-        base64_frame = base64.b64encode(buffer).decode('utf-8')
+        if frame_id % FRAME_SKIP == 0:
+            try:
+                result = await loop.run_in_executor(
+                    None, 
+                    lambda: process_frame_wrapper(frame_np, object_str)
+                )
+            except Exception as e:
+                print(f"Frame {frame_id} processing error: {e}")
+                result = {"bbox": [], "label": object_str}
+        else:
+            result = {"bbox": [], "label": object_str}
 
-        # 根据 FRAME_SKIP 抽检帧
-#        if frame_id % FRAME_SKIP == 0:
-#            result = await analyze_frame(frame_np, object_str)
-#        else:
-#            result = {"bbox": [], "label": object_str}  # 未抽检的帧不进行检测
-
-        result = {"bbox": [], "label": object_str}
-
-        # 发送 WebSocket 更新
-        message = json.dumps({
-            "frame": base64_frame,  # 发送 base64 帧
-            "second": second,
-            "frame_id": frame_id,
-            "bbox": result["bbox"],  # 发送 bbox
-            "label": result["label"]  # 发送 label
-        })
-        await asyncio.gather(*[client.send_text(message) for client in clients])
+        _, buffer = cv2.imencode(".jpg", frame_np, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
+        binary_frame = buffer.tobytes()
+        await ordered_result_queue.put((frame_id, binary_frame, result))
+        print(f"Frame {frame_id} processed. Queue size: {ordered_result_queue.qsize()}")
         frame_queue.task_done()
+
+async def send_results():
+    """ 直接发送队列中的帧结果 """
+    while True:
+        if not ordered_result_queue.empty():
+            frame_id, binary_frame, result = await ordered_result_queue.get()
+            print(f"Sending frame {frame_id} from queue")
+            for client in clients:
+                await client.send_bytes(binary_frame)
+                await client.send_json(result)
+        await asyncio.sleep(0.01)
 
 @app.on_event("startup")
 async def startup_event():
-    """ 确保 `frame_worker` 在 FastAPI 生命周期内运行 """
     asyncio.create_task(frame_worker())
+    asyncio.create_task(send_results())
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """ WebSocket 处理函数 """
     await websocket.accept()
     clients.add(websocket)
-    print("WebSocket connected")  # 调试日志
+    print("WebSocket connected")
     try:
         while True:
             await websocket.receive_text()
     except Exception as e:
-        print(f"WebSocket error: {e}")  # 调试日志
+        print(f"WebSocket error: {e}")
         clients.remove(websocket)
 
 @app.post("/upload")
 async def upload_video(video: UploadFile = File(...)):
-    """ 处理视频上传 """
-    print("Video uploaded, saving...")  # 调试日志
-
-    # 保存上传的视频文件
+    print("Video uploaded, saving...")
     video_path = UPLOAD_DIR / video.filename
     with open(video_path, "wb") as buffer:
         shutil.copyfileobj(video.file, buffer)
-
     return {"status": "success", "message": "视频上传成功", "filename": video.filename}
 
 @app.post("/analyze")
 async def analyze_video(request: AnalyzeRequest):
-    """ 处理视频分析 """
     object_str = request.object_str
     filename = request.filename
-    print(f"Starting analysis for object: {object_str}")  # 调试日志
-
-    # 使用 OpenCV 读取视频文件
-    video_path = UPLOAD_DIR / filename  # 使用上传的文件名
+    print(f"Starting analysis for object: {object_str}")
+    video_path = UPLOAD_DIR / filename
     if not video_path.exists():
         return {"status": "error", "message": "视频文件不存在"}
-
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         return {"status": "error", "message": "无法打开视频文件"}
 
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    target_fps = 1  # 目标帧率
-    frame_interval = max(1, fps // target_fps)  # 计算帧间隔
+    target_fps = 20 #如果原视频 FPS 是 30，而目标是 10，则 frame_interval = 30 // 10 = 3，意味着每 3 帧采样一帧，从而达到降帧处理的目的
+    frame_interval = max(1, fps // target_fps)
     print(f"ori_fps: {fps}")
     print(f"target_fps: {target_fps}")
 
@@ -174,26 +183,21 @@ async def analyze_video(request: AnalyzeRequest):
         ret, frame = cap.read()
         if not ret:
             break
-
-        # 根据帧间隔跳过部分帧
         if frame_id % frame_interval == 0:
             await frame_queue.put((frame, object_str, second, frame_id))
-
+            print(f"Frame {frame_id} added to frame_queue")
         frame_id += 1
         second = frame_id // fps
-
     cap.release()
-    os.remove(video_path)  # 删除上传的视频文件
+    os.remove(video_path)
     return {"status": "processing", "message": "视频分析中..."}
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    """ 返回渲染后的 HTML 页面 """
     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/favicon.ico")
 async def favicon():
-    """ 忽略 favicon.ico 请求 """
     return {"message": "No favicon"}
 
 if __name__ == "__main__":
