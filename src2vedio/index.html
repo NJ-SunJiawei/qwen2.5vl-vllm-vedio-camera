@@ -1,135 +1,309 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <title>Video Analysis</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css?v=1.0" rel="stylesheet">
+  <meta charset="UTF-8">
+  <title>目标检测视频分析</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+  <style>
+    body {
+      background: linear-gradient(135deg, #ece9e6, #ffffff);
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .upload-section, .analyze-section {
+      margin-bottom: 20px;
+    }
+    /* 两栏布局：左侧视频区域，右侧缩略图 */
+    .video-thumbnails {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    .video-container {
+      flex: 1 1 70%;
+      position: relative;
+    }
+    .video-container canvas {
+      width: 100%;
+      height: auto;
+      border: 1px solid #ddd;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    /* FPS 显示 */
+    #fpsDisplay {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 14px;
+      z-index: 10;
+    }
+    .thumbnail-container {
+      flex: 1 1 28%;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .thumbnail-container img {
+      width: 100%;
+      object-fit: cover;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    /* 进度条样式 */
+    #progressContainer {
+      width: 100%;
+      background: #e5e7eb;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 10px;
+      position: relative;
+      height: 20px;
+    }
+    #progressBar {
+      height: 100%;
+      width: 0%;
+      background: #3b82f6;
+      transition: width 0.2s;
+    }
+    #progressText {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      line-height: 20px;
+      font-size: 14px;
+      color: #333;
+    }
+  </style>
 </head>
 <body class="p-6">
-    <h1 class="text-2xl font-bold mb-4">目标检测</h1>
+  <div class="container">
+    <h1 class="header text-3xl font-bold">目标检测视频分析</h1>
     
-    <!-- 上传表单 -->
-    <form id="uploadForm">
-        <input type="file" id="videoInput" accept="video/*" class="border p-2 rounded">
-        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">上传视频</button>
+    <!-- 文件上传区域 -->
+    <form id="uploadForm" class="upload-section">
+      <input type="file" id="videoInput" accept="video/*" class="border p-2 rounded">
+      <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded ml-2">上传视频</button>
+      <div id="progressContainer">
+        <div id="progressBar"></div>
+        <span id="progressText">0%</span>
+      </div>
     </form>
-
-    <!-- 分析按钮 -->
-    <div id="analyzeSection" class="mt-4 hidden">
-        <input type="text" id="objectInput" placeholder="输入要检测的对象" class="border p-2 rounded">
-        <button id="analyzeButton" class="bg-green-500 text-white px-4 py-2 rounded">开始分析</button>
+    
+    <!-- 分析输入区域 -->
+    <div id="analyzeSection" class="analyze-section hidden">
+      <input type="text" id="objectInput" placeholder="输入要检测的对象" class="border p-2 rounded">
+      <button id="analyzeButton" class="bg-green-500 text-white px-4 py-2 rounded ml-2">开始分析</button>
     </div>
-
-    <!-- 视频播放器和画布 -->
-    <div class="mt-6 relative">
-        <canvas id="videoCanvas" class="w-full max-w-2xl"></canvas>
+    
+    <!-- 视频播放与缩略图展示 -->
+    <div class="video-thumbnails">
+      <div class="video-container">
+        <!-- FPS 显示 -->
+        <div id="fpsDisplay">FPS: 0</div>
+        <canvas id="videoCanvas"></canvas>
         <canvas id="overlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+      </div>
+      <div class="thumbnail-container" id="thumbnailContainer">
+        <!-- 缩略图动态插入 -->
+      </div>
     </div>
+  </div>
 
-    <script>
-        // 建立 WebSocket 连接
-        let ws = new WebSocket(`ws://${window.location.host}/ws`);
+  <script>
+    // 全局变量：保存最近一次检测结果及其时间戳，设定绿框显示时长（毫秒）
+    let lastDetection = null;
+    let detectionTimestamp = 0;
+    const detectionDisplayDuration = 2000; // 2秒
 
-        // 获取 DOM 元素
-        const videoCanvas = document.getElementById('videoCanvas');
-        const overlayCanvas = document.getElementById('overlayCanvas');
-        const videoCtx = videoCanvas.getContext('2d');
-        const overlayCtx = overlayCanvas.getContext('2d');
+    // FPS 相关变量
+    let frameCount = 0;
+    let lastFpsTime = Date.now();
+    let currentFPS = 0;
 
-        // WebSocket 消息事件处理
-        ws.onmessage = async (event) => {
-            // 如果消息是二进制，则作为视频帧处理
-            if (event.data instanceof Blob) {
-                const blob = event.data;
-                const url = URL.createObjectURL(blob);
-                const img = new Image();
-                img.src = url;
-                img.onload = () => {
-                    videoCanvas.width = img.width;
-                    videoCanvas.height = img.height;
-                    overlayCanvas.width = img.width;
-                    overlayCanvas.height = img.height;
-                    videoCtx.drawImage(img, 0, 0, img.width, img.height);
-                };
-            } else {
-                // 如果消息是文本，则解析为 JSON 并绘制绿框
-                let jsonStr;
-                if (typeof event.data === "string") {
-                    jsonStr = event.data;
-                } else if (event.data.text) {
-                    jsonStr = await event.data.text();
-                }
-                try {
-                    const data = JSON.parse(jsonStr);
-                    console.log("Received result:", data);
-                    drawBoundingBoxes(data);
-                } catch (error) {
-                    console.error("Failed to parse JSON:", error);
-                }
-            }
-        };
+    // 建立 WebSocket 连接，并设置 binaryType 为 blob
+    let ws = new WebSocket(`ws://${window.location.host}/ws`);
+    ws.binaryType = "blob";
+    ws.onopen = () => {
+      console.log("WebSocket 连接已建立");
+    };
+    ws.onerror = (err) => {
+      console.error("WebSocket 错误：", err);
+    };
+    ws.onclose = () => {
+      console.warn("WebSocket 连接已关闭");
+    };
 
-        // 绘制边界框和 label 的函数
-        function drawBoundingBoxes(data) {
-            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-            if (data.bbox && data.bbox.length === 4) {
-                const [x1, y1, x2, y2] = data.bbox;
-                const label = data.label;
-                overlayCtx.strokeStyle = "green";
-                overlayCtx.lineWidth = 2;
-                overlayCtx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-                overlayCtx.font = "14px Arial";
-                overlayCtx.fillStyle = "green";
-                overlayCtx.fillText(label, x1, y1 - 5);
-            }
+    // 获取 DOM 元素
+    const videoCanvas = document.getElementById('videoCanvas');
+    const overlayCanvas = document.getElementById('overlayCanvas');
+    const videoCtx = videoCanvas.getContext('2d');
+    const overlayCtx = overlayCanvas.getContext('2d');
+    const thumbnailContainer = document.getElementById('thumbnailContainer');
+    const fpsDisplay = document.getElementById('fpsDisplay');
+    const progressText = document.getElementById('progressText');
+
+    // 持续更新 overlayCanvas，延长绿框显示时间
+    function updateOverlay() {
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      if (lastDetection && (Date.now() - detectionTimestamp < detectionDisplayDuration)) {
+        const data = lastDetection;
+        if (data.bbox && data.bbox.length === 4) {
+          const [x1, y1, x2, y2] = data.bbox;
+          overlayCtx.strokeStyle = "green";
+          overlayCtx.lineWidth = 2;
+          overlayCtx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+          overlayCtx.font = "14px Arial";
+          overlayCtx.fillStyle = "green";
+          overlayCtx.fillText(data.label, x1, y1 - 5);
         }
+      }
+      requestAnimationFrame(updateOverlay);
+    }
+    updateOverlay();
 
-        // 表单提交事件（上传视频）
-        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            console.log("Form submitted");
-            const formData = new FormData();
-            formData.append('video', document.getElementById('videoInput').files[0]);
-            try {
-                const response = await fetch('/upload', { method: 'POST', body: formData });
-                if (!response.ok) {
-                    throw new Error("Network response was not ok");
-                }
-                const result = await response.json();
-                console.log("Video uploaded successfully");
-                document.getElementById('analyzeSection').classList.remove('hidden');
-                document.getElementById('analyzeButton').dataset.filename = result.filename;
-            } catch (error) {
-                console.error("Error during video upload:", error);
-            }
-        });
+    // 添加缩略图：只在检测到有效目标时添加，并始终保留最新5张
+    function addThumbnail() {
+      if (videoCanvas.width && videoCanvas.height) {
+        const dataURL = videoCanvas.toDataURL("image/jpeg", 0.5);
+        const img = document.createElement("img");
+        img.src = dataURL;
+        thumbnailContainer.appendChild(img);
+        // 保留最新的 5 张缩略图（若不足则显示已有的张数）
+        while (thumbnailContainer.children.length > 5) {
+          thumbnailContainer.removeChild(thumbnailContainer.firstChild);
+        }
+      }
+    }
 
-        // 分析按钮点击事件
-        document.getElementById('analyzeButton').addEventListener('click', async () => {
-            const objectStr = document.getElementById('objectInput').value;
-            if (!objectStr) {
-                alert("请输入要检测的对象");
-                return;
-            }
-            const filename = document.getElementById('analyzeButton').dataset.filename;
-            if (!filename) {
-                alert("请先上传视频");
-                return;
-            }
-            try {
-                const response = await fetch('/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ object_str: objectStr, filename: filename })
-                });
-                if (!response.ok) {
-                    throw new Error("Network response was not ok");
-                }
-                console.log("Analysis started");
-            } catch (error) {
-                console.error("Error during analysis:", error);
-            }
+    // 处理 WebSocket 消息
+    ws.onmessage = async (event) => {
+      // 二进制数据：视为视频帧
+      if (event.data instanceof Blob) {
+        const blob = event.data;
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.src = url;
+        img.onload = () => {
+          // 如尺寸发生变化则更新 canvas 尺寸
+          if (videoCanvas.width !== img.width || videoCanvas.height !== img.height) {
+            videoCanvas.width = img.width;
+            videoCanvas.height = img.height;
+            overlayCanvas.width = img.width;
+            overlayCanvas.height = img.height;
+          }
+          videoCtx.drawImage(img, 0, 0, img.width, img.height);
+          // 更新 FPS 计数
+          frameCount++;
+          const now = Date.now();
+          if (now - lastFpsTime >= 1000) {
+            currentFPS = frameCount;
+            frameCount = 0;
+            lastFpsTime = now;
+            fpsDisplay.innerText = `FPS: ${currentFPS}`;
+          }
+        };
+      } else {
+        // 文本数据：视为检测结果（JSON）
+        let jsonStr;
+        if (typeof event.data === "string") {
+          jsonStr = event.data;
+        } else if (event.data.text) {
+          jsonStr = await event.data.text();
+        }
+        try {
+          const data = JSON.parse(jsonStr);
+          console.log("Received result:", data);
+          // 仅当检测到物体（bbox 数组有效）时，更新检测结果并添加缩略图
+          if (data.bbox && data.bbox.length === 4 && data.bbox.some(coord => coord !== 0)) {
+            lastDetection = data;
+            detectionTimestamp = Date.now();
+            addThumbnail();
+          }
+        } catch (error) {
+          console.error("Failed to parse JSON:", error);
+        }
+      }
+    };
+
+    // 使用 XMLHttpRequest 实现文件上传，并显示实时进度条及百分比
+    document.getElementById('uploadForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fileInput = document.getElementById('videoInput');
+      if (fileInput.files.length === 0) {
+        alert("请选择视频文件");
+        return;
+      }
+      const file = fileInput.files[0];
+      const formData = new FormData();
+      formData.append('video', file);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/upload');
+      xhr.upload.onprogress = function (event) {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          document.getElementById('progressBar').style.width = percent + "%";
+          progressText.innerText = percent + "%";
+        }
+      };
+      xhr.onload = function () {
+        if (xhr.status === 200) {
+          console.log("Video uploaded successfully");
+          const result = JSON.parse(xhr.responseText);
+          document.getElementById('analyzeSection').classList.remove('hidden');
+          document.getElementById('analyzeButton').dataset.filename = result.filename;
+        } else {
+          console.error("Error during video upload: " + xhr.statusText);
+          alert("上传视频失败，请重试");
+        }
+      };
+      xhr.onerror = function () {
+        console.error("Error during video upload: Network error");
+        alert("上传视频失败，请检查网络");
+      };
+      xhr.send(formData);
+    });
+
+    // 分析按钮点击事件：发送检测请求
+    document.getElementById('analyzeButton').addEventListener('click', async () => {
+      const objectStr = document.getElementById('objectInput').value;
+      if (!objectStr) {
+        alert("请输入要检测的对象");
+        return;
+      }
+      const filename = document.getElementById('analyzeButton').dataset.filename;
+      if (!filename) {
+        alert("请先上传视频");
+        return;
+      }
+      try {
+        const response = await fetch('/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ object_str: objectStr, filename: filename })
         });
-    </script>
+        if (!response.ok) {
+          throw new Error("Network response was not ok");
+        }
+        console.log("Analysis started");
+      } catch (error) {
+        console.error("Error during analysis:", error);
+        alert("启动分析失败，请重试");
+      }
+    });
+  </script>
 </body>
 </html>

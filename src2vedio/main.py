@@ -29,8 +29,8 @@ clients = set()
 
 # 帧处理参数
 FRAME_SKIP = 50  # 每 10 帧抽检一次（根据实际情况调整）
-QUEUE_SIZE = 1000  # 最大缓存 100 帧
-frame_queue = asyncio.Queue(maxsize=QUEUE_SIZE)
+QUEUE_SIZE = 1000  # 最大缓存 1000 帧
+frame_queue = asyncio.Queue() #asyncio.Queue(maxsize=QUEUE_SIZE)
 ordered_result_queue = asyncio.Queue()  # 用于存储处理结果
 
 # 上传文件保存目录
