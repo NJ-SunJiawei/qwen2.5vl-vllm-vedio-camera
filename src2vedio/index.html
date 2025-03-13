@@ -37,14 +37,24 @@
     }
     /* 视频播放区域 */
     .video-container {
+      background-color: black; /* 修改背景颜色 */
       position: relative;
       width: 100%;
       border: 1px solid #ddd;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      overflow: hidden;
+      display: flex;              /* 启用 Flexbox */
+      justify-content: center;    /* 水平居中 */
+      align-items: center;        /* 垂直居中 */
+    }
+    /* 内部包装，使视频画布和叠加层居中对齐 */
+    .canvas-wrapper {
+      position: relative;
+      display: inline-block;
     }
     canvas {
-      width: 100%;
-      height: auto;
+      max-width: 100%; /* 确保 canvas 不超过父容器宽度 */
+      display: block;
     }
     .fps-display {
       position: absolute;
@@ -126,8 +136,11 @@
       <!-- 视频播放与 FPS -->
       <div class="video-container mb-4" id="fileVideoContainer">
         <div class="fps-display" id="fileFpsDisplay">FPS: 0</div>
-        <canvas id="fileVideoCanvas"></canvas>
-        <canvas id="fileOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+        <!-- 新增内层包装容器，使视频画布与叠加层能同步居中 -->
+        <div class="canvas-wrapper">
+          <canvas id="fileVideoCanvas"></canvas>
+          <canvas id="fileOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+        </div>
       </div>
       <!-- 缩略图展示 -->
       <div class="thumbnail-container" id="fileThumbnailContainer"></div>
@@ -148,8 +161,11 @@
       <!-- 视频播放与 FPS -->
       <div class="video-container mb-4" id="streamVideoContainer">
         <div class="fps-display" id="streamFpsDisplay">FPS: 0</div>
-        <canvas id="streamVideoCanvas"></canvas>
-        <canvas id="streamOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+        <!-- 内层包装容器 -->
+        <div class="canvas-wrapper">
+          <canvas id="streamVideoCanvas"></canvas>
+          <canvas id="streamOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+        </div>
       </div>
       <!-- 缩略图展示 -->
       <div class="thumbnail-container" id="streamThumbnailContainer"></div>
@@ -183,8 +199,8 @@
     });
     
     // ---------------------------
-    // 公共检测显示时长（2秒）
-    const detectionDisplayDuration = 2000;
+    // 公共检测显示时长（1.5秒）
+    const detectionDisplayDuration = 1500;
     
     // ---------------------------
     // 【本地视频模式】相关变量与函数
@@ -324,6 +340,7 @@
       };
       xhr.send(formData);
     });
+    
     document.getElementById('fileAnalyzeButton').addEventListener('click', async () => {
       const objectStr = document.getElementById('fileObjectInput').value;
       if (!objectStr) {
@@ -358,7 +375,7 @@
     let streamCurrentFPS = 0;
     let streamWs;
     
-    // 初始化互联网流 WebSocket（假设端点 /ws/stream）
+    // 初始化互联网流 WebSocket（端点 /ws/stream）
     function initStreamWebSocket() {
       streamWs = new WebSocket(`ws://${window.location.host}/ws/stream`);
       streamWs.binaryType = "blob";
@@ -412,7 +429,7 @@
         }
       };
     }
-    // 注意：互联网流 WebSocket在用户点击“开始拉流”后初始化
+    // 注意：互联网流 WebSocket 在用户点击“开始拉流”后初始化
     
     // 持续更新互联网流 overlay
     function updateStreamOverlay() {
@@ -473,6 +490,7 @@
         alert("启动流失败，请重试");
       }
     });
+    
     document.getElementById('streamAnalyzeButton').addEventListener('click', async () => {
       const objectStr = document.getElementById('streamObjectInput').value;
       if (!objectStr) {

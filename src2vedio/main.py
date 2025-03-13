@@ -29,7 +29,7 @@ client = OpenAI(
 clients = set()
 
 # 参数设置
-TARGET_FPS = 20          # 分析帧率
+TARGET_FPS = 30          # 分析帧率
 FRAME_SKIP = 50          # 每处理5帧做一次检测
 TARGET_SEND_FPS = 20     # WebSocket 发送帧率控制
 
