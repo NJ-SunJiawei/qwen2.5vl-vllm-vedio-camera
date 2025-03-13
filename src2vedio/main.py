@@ -48,8 +48,7 @@ class AnalyzeRequest(BaseModel):
 
 async def analyze_frame(frame_np: np.ndarray, object_str: str):
     """ 使用 numpy 数组进行目标检测，无需写入 .jpg 文件 """
-    _, buffer = cv2.imencode(".jpg", frame_np, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
-    base64_image = base64.b64encode(buffer).decode('utf-8')
+    base64_image = base64.b64encode(frame_np).decode('utf-8')  # 直接使用传入的二进制数据
 
     prompt_str = f"""
     Analyze the image and extract the bounding box coordinates for the object '{object_str}'.
@@ -122,8 +121,7 @@ async def frame_worker():
         else:
             result = {"bbox": [], "label": object_str}
 
-        _, buffer = cv2.imencode(".jpg", frame_np, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
-        binary_frame = buffer.tobytes()
+        binary_frame = frame_np  # 直接使用传入的二进制帧数据
         await ordered_result_queue.put((frame_id, binary_frame, result))
         print(f"Frame {frame_id} processed. Queue size: {ordered_result_queue.qsize()}")
         frame_queue.task_done()
@@ -196,7 +194,7 @@ async def analyze_video(request: AnalyzeRequest):
         return {"status": "error", "message": "无法打开视频文件"}
 
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    target_fps = TARGET_FPS #如果原视频 FPS 是 30，而目标是 10，则 frame_interval = 30 // 10 = 3，意味着每 3 帧采样一帧，从而达到降帧处理的目的
+    target_fps = TARGET_FPS
     frame_interval = max(1, fps // target_fps)
     print(f"ori_fps: {fps}")
     print(f"target_fps: {target_fps}")
@@ -207,7 +205,11 @@ async def analyze_video(request: AnalyzeRequest):
         if not ret:
             break
         if frame_id % frame_interval == 0:
-            await frame_queue.put((frame, object_str, second, frame_id))
+            # 压缩图片比例和质量
+            resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)))  # 缩小比例为50%
+            _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])  # 质量压缩为50%
+            binary_frame = buffer.tobytes()
+            await frame_queue.put((binary_frame, object_str, second, frame_id))
             print(f"Frame {frame_id} added to frame_queue")
         frame_id += 1
         second = frame_id // fps
