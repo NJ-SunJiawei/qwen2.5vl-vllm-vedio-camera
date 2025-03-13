@@ -24,6 +24,5 @@ python log
 '''
 web 实时检测卡顿
 '''
-![image](https://github.com/user-attachments/assets/9e00d986-b66c-466b-86d3-e5d4da814b4e)
 
-
+![image](https://github.com/user-attachments/assets/ff9a4f09-67ce-492a-b6af-7c4cc296df67)
