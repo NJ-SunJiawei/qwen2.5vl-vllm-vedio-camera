@@ -23,7 +23,7 @@ templates = Jinja2Templates(directory="templates")
 
 # OpenAI API 初始化
 client = OpenAI(
-    base_url="http://43.136.90.245:8000/v1",  # 你的 OpenAI API 地址
+    base_url="http://124.220.202.52:8000/v1",  # 你的 OpenAI API 地址
     api_key="EMPTY"
 )
 
@@ -187,7 +187,7 @@ async def stream_frame_worker():
             result = {"bbox": [], "label": object_str}
 
         await stream_ordered_result_queue.put((frame_id, binary_frame, result))
-        print(f"Stream Frame {frame_id} processed. Queue size: {stream_ordered_result_queue.qsize()}")
+#        print(f"Stream Frame {frame_id} processed. Queue size: {stream_ordered_result_queue.qsize()}")
         stream_frame_queue.task_done()
 
 async def send_stream_results():
@@ -229,7 +229,7 @@ async def stream_video_reader(stream_url: str):
             second = frame_id // int(fps)
             # 使用当前设置的检测对象（由 /stream/analyze 设置）
             await stream_frame_queue.put((binary_frame, stream_object_str, second, frame_id))
-            print(f"Stream Frame {frame_id} added to stream_frame_queue")
+#            print(f"Stream Frame {frame_id} added to stream_frame_queue")
         frame_id += 1
         await asyncio.sleep(0)  # 让出控制权
     cap.release()
