@@ -14,7 +14,6 @@
       margin: 0 auto;
       padding: 20px;
     }
-    /* Tab 按钮样式 */
     .tab-buttons button {
       padding: 10px 20px;
       margin-right: 10px;
@@ -35,7 +34,6 @@
     .section.active {
       display: block;
     }
-    /* 视频播放区域 */
     .video-container {
       background-color: black;
       position: relative;
@@ -47,7 +45,6 @@
       justify-content: center;
       align-items: center;
     }
-    /* 内部包装，使视频画布和叠加层居中对齐 */
     .canvas-wrapper {
       position: relative;
       display: inline-block;
@@ -67,7 +64,6 @@
       font-size: 14px;
       z-index: 10;
     }
-    /* 缩略图样式 */
     .thumbnail-container {
       margin-top: 10px;
       display: flex;
@@ -81,7 +77,6 @@
       border-radius: 4px;
       cursor: pointer;
     }
-    /* 进度条样式 */
     #progressContainer {
       width: 100%;
       background: #e5e7eb;
@@ -106,7 +101,6 @@
       font-size: 14px;
       color: #333;
     }
-    /* 模态层样式，用于放大显示缩略图 */
     #imageModal {
       position: fixed;
       inset: 0;
@@ -165,18 +159,13 @@
       <div class="thumbnail-container" id="fileThumbnailContainer"></div>
     </div>
     
-    <!-- 互联网流模式 -->
+    <!-- 互联网流模式（合并表单） -->
     <div id="sectionStream" class="section">
-      <!-- 流地址输入 -->
-      <form id="streamInputForm" class="mb-4">
-        <input type="text" id="streamUrlInput" placeholder="输入流地址" class="border p-2 rounded w-2/3">
-        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded ml-2">开始拉流</button>
+      <form id="streamCombinedForm" class="mb-4">
+        <input type="text" id="streamObjectInput" placeholder="请输入检测对象" class="border p-2 rounded mr-2">
+        <input type="text" id="streamUrlInput" placeholder="请输入流地址" class="border p-2 rounded w-1/2 mr-2">
+        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">开始拉流</button>
       </form>
-      <!-- 检测对象输入 -->
-      <div id="streamAnalyzeSection" class="mb-4 hidden">
-        <input type="text" id="streamObjectInput" placeholder="输入要检测的对象" class="border p-2 rounded">
-        <button id="streamAnalyzeButton" class="bg-green-500 text-white px-4 py-2 rounded ml-2">开始识别</button>
-      </div>
       <!-- 视频播放与 FPS -->
       <div class="video-container mb-4" id="streamVideoContainer">
         <div class="fps-display" id="streamFpsDisplay">FPS: 0</div>
@@ -189,7 +178,7 @@
       <div class="thumbnail-container" id="streamThumbnailContainer"></div>
     </div>
     
-    <!-- 模态层，用于放大缩略图 -->
+    <!-- 模态层，用于放大显示缩略图 -->
     <div id="imageModal" class="hidden" onclick="closeModal()">
       <img id="modalImage" src="">
     </div>
@@ -222,11 +211,11 @@
     });
     
     // ---------------------------
-    // 公共检测显示时长（1.5秒）
+    // 公共检测显示时长（1.0秒）
     const detectionDisplayDuration = 1000;
     
     // ---------------------------
-    // 【本地视频模式】相关变量与函数
+    // 【本地视频模式】相关代码（保持原有逻辑）
     let fileLastDetection = null;
     let fileDetectionTimestamp = 0;
     let fileFrameCount = 0;
@@ -234,7 +223,6 @@
     let fileCurrentFPS = 0;
     let fileWs;
     
-    // 初始化本地视频 WebSocket（端点 /ws）
     function initFileWebSocket() {
       fileWs = new WebSocket(`ws://${window.location.host}/ws`);
       fileWs.binaryType = "blob";
@@ -290,7 +278,6 @@
     }
     initFileWebSocket();
     
-    // 持续更新本地视频 overlay
     function updateFileOverlay() {
       const fileOverlayCanvas = document.getElementById('fileOverlayCanvas');
       const ctx = fileOverlayCanvas.getContext('2d');
@@ -311,7 +298,6 @@
     }
     updateFileOverlay();
     
-    // 添加本地视频缩略图（最多 5 张）并绑定点击放大事件
     function addFileThumbnail() {
       const fileVideoCanvas = document.getElementById('fileVideoCanvas');
       if (fileVideoCanvas.width && fileVideoCanvas.height) {
@@ -329,7 +315,6 @@
       }
     }
     
-    // 文件上传与识别
     document.getElementById('fileUploadForm').addEventListener('submit', (e) => {
       e.preventDefault();
       const fileInput = document.getElementById('videoInput');
@@ -393,7 +378,7 @@
     });
     
     // ---------------------------
-    // 【互联网流模式】相关变量与函数
+    // 【互联网流模式】相关代码
     let streamLastDetection = null;
     let streamDetectionTimestamp = 0;
     let streamFrameCount = 0;
@@ -401,7 +386,6 @@
     let streamCurrentFPS = 0;
     let streamWs;
     
-    // 初始化互联网流 WebSocket（端点 /ws/stream）
     function initStreamWebSocket() {
       streamWs = new WebSocket(`ws://${window.location.host}/ws/stream`);
       streamWs.binaryType = "blob";
@@ -456,7 +440,6 @@
       };
     }
     
-    // 持续更新互联网流 overlay
     function updateStreamOverlay() {
       const streamOverlayCanvas = document.getElementById('streamOverlayCanvas');
       const ctx = streamOverlayCanvas.getContext('2d');
@@ -477,7 +460,6 @@
     }
     updateStreamOverlay();
     
-    // 添加互联网流缩略图（最多 5 张）并绑定点击放大事件
     function addStreamThumbnail() {
       const streamVideoCanvas = document.getElementById('streamVideoCanvas');
       if (streamVideoCanvas.width && streamVideoCanvas.height) {
@@ -495,47 +477,41 @@
       }
     }
     
-    // 流地址输入与拉流
-    document.getElementById('streamInputForm').addEventListener('submit', async (e) => {
+    // 处理合并表单：先设置检测目标，再启动拉流
+    document.getElementById('streamCombinedForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const objectStr = document.getElementById('streamObjectInput').value;
       const streamUrl = document.getElementById('streamUrlInput').value;
+      if (!objectStr) {
+        alert("请输入检测对象");
+        return;
+      }
       if (!streamUrl) {
         alert("请输入流地址");
         return;
       }
       try {
-        const response = await fetch('/stream', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ stream_url: streamUrl })
-        });
-        if (!response.ok) throw new Error("网络响应异常");
-        console.log("互联网流拉流启动成功");
-        document.getElementById('streamAnalyzeSection').classList.remove('hidden');
-        initStreamWebSocket();
-      } catch (error) {
-        console.error("启动互联网流失败:", error);
-        alert("启动流失败，请重试");
-      }
-    });
-    
-    document.getElementById('streamAnalyzeButton').addEventListener('click', async () => {
-      const objectStr = document.getElementById('streamObjectInput').value;
-      if (!objectStr) {
-        alert("请输入要检测的对象");
-        return;
-      }
-      try {
-        const response = await fetch('/stream/analyze', {
+        // 先设置检测目标
+        const analyzeResponse = await fetch('/stream/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ object_str: objectStr })
         });
-        if (!response.ok) throw new Error("网络响应异常");
-        console.log("互联网流识别启动成功");
+        if (!analyzeResponse.ok) throw new Error("检测目标设置失败");
+        console.log("检测目标设置成功");
+        
+        // 再启动拉流
+        const streamResponse = await fetch('/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stream_url: streamUrl })
+        });
+        if (!streamResponse.ok) throw new Error("拉流启动失败");
+        console.log("互联网流拉流启动成功");
+        initStreamWebSocket();
       } catch (error) {
-        console.error("互联网流识别错误:", error);
-        alert("启动流识别失败，请重试");
+        console.error("启动互联网流错误:", error);
+        alert("启动互联网流失败，请重试");
       }
     });
     
@@ -555,4 +531,3 @@
   </script>
 </body>
 </html>
-

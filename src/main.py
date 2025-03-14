@@ -273,6 +273,8 @@ async def analyze_video(request: AnalyzeRequest):
         return {"status": "error", "message": "无法打开视频文件"}
 
     fps = int(cap.get(cv2.CAP_PROP_FPS))
+    if fps <= 0:
+        fps = TARGET_FPS
     target_fps = TARGET_FPS
     frame_interval = max(1, fps // target_fps)
     print(f"原始fps: {fps}, 目标fps: {target_fps}")
