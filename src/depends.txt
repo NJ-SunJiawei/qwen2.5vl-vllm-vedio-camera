@@ -1,2 +1,2 @@
 apt install ffmpeg
-pip install fastapi uvicorn python-multipart jinja2 pydantic opencv-python numpy openai
+pip install fastapi uvicorn python-multipart jinja2 pydantic opencv-python numpy openai websockets

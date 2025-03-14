@@ -305,6 +305,10 @@ show_channel_urls: true
 #            VLLM_USE_V1=1 \
             VLLM_WORKER_MULTIPROC_METHOD=spawn \
             vllm serve /root/.cache/huggingface/hub/models--Qwen--Qwen2.5-VL-3B-Instruct/snapshots/1b989f2c63999d7344135894d3cfa8f494116743 --trust-remote-code --served-model-name Qwen/Qwen2.5-VL-3B-Instruct --gpu-memory-utilization 0.8 --max-model-len 8192 --tensor-parallel-size 1 --host 0.0.0.0 --port 8000 --dtype=float16
+
+            export HF_HUB_OFFLINE=1
+            VLLM_WORKER_MULTIPROC_METHOD=spawn vllm serve Qwen/Qwen2.5-VL-3B-Instruct --trust-remote-code --served-model-name Qwen/Qwen2.5-VL-3B-Instruct --gpu-memory-utilization 0.8 --max-model-len 8192 --tensor-parallel-size 1 --host 0.0.0.0 --port 8000 --dtype=float16
+           
             ###--max_num_batched_tokens=2048
             ###--limit-mm-per-prompt image=5,video=5
             ####官方配置：https://github.com/QwenLM/Qwen2.5-VL
