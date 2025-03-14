@@ -38,6 +38,7 @@
       background-color: black;
       position: relative;
       width: 100%;
+      max-height: 80vh;
       border: 1px solid #ddd;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
       overflow: hidden;
@@ -50,8 +51,10 @@
       display: inline-block;
     }
     canvas {
-      max-width: 100%;
       display: block;
+      /* 使用100%宽度，让浏览器根据容器缩放 */
+      width: 100%;
+      height: auto;
     }
     .fps-display {
       position: absolute;
@@ -63,6 +66,18 @@
       border-radius: 4px;
       font-size: 14px;
       z-index: 10;
+    }
+    .fullscreen-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      z-index: 11;
     }
     .thumbnail-container {
       margin-top: 10px;
@@ -179,6 +194,7 @@
       </div>
       <!-- 视频播放与 FPS -->
       <div class="video-container mb-4" id="fileVideoContainer">
+        <button id="fileFullScreenButton" class="fullscreen-btn">全屏</button>
         <div class="fps-display" id="fileFpsDisplay">FPS: 0</div>
         <div class="canvas-wrapper">
           <canvas id="fileVideoCanvas"></canvas>
@@ -198,6 +214,7 @@
       </form>
       <!-- 视频播放与 FPS -->
       <div class="video-container mb-4" id="streamVideoContainer">
+        <button id="streamFullScreenButton" class="fullscreen-btn">全屏</button>
         <div class="fps-display" id="streamFpsDisplay">FPS: 0</div>
         <div class="canvas-wrapper">
           <canvas id="streamVideoCanvas"></canvas>
@@ -222,6 +239,9 @@
     let streamThumbnailList = [];
     let currentModalList = [];
     let currentModalIndex = 0;
+    // 记录原始尺寸
+    let fileOriginalWidth = 0, fileOriginalHeight = 0;
+    let streamOriginalWidth = 0, streamOriginalHeight = 0;
     
     // ---------------------------
     // 标签切换逻辑
@@ -262,9 +282,18 @@
     let fileWs;
     
     // 优化：使用 createImageBitmap 替代新建 Image 对象
-    function drawImageOnCanvas(blob, canvas, overlayCanvas) {
+    function drawImageOnCanvas(blob, canvas, overlayCanvas, type) {
       createImageBitmap(blob).then(imgBitmap => {
-        if (canvas.width !== imgBitmap.width || canvas.height !== imgBitmap.height) {
+        // 若第一次加载则记录原始尺寸
+        if(type === 'file' && fileOriginalWidth === 0){
+          fileOriginalWidth = imgBitmap.width;
+          fileOriginalHeight = imgBitmap.height;
+        } else if(type === 'stream' && streamOriginalWidth === 0){
+          streamOriginalWidth = imgBitmap.width;
+          streamOriginalHeight = imgBitmap.height;
+        }
+        // 仅在尺寸不一致时更新（注意：这里设置 canvas.width/height 为 DOM 属性会重置内部绘图区域）
+        if(canvas.width !== imgBitmap.width || canvas.height !== imgBitmap.height){
           canvas.width = imgBitmap.width;
           canvas.height = imgBitmap.height;
           overlayCanvas.width = imgBitmap.width;
@@ -286,7 +315,7 @@
           const blob = event.data;
           const fileVideoCanvas = document.getElementById('fileVideoCanvas');
           const fileOverlayCanvas = document.getElementById('fileOverlayCanvas');
-          drawImageOnCanvas(blob, fileVideoCanvas, fileOverlayCanvas);
+          drawImageOnCanvas(blob, fileVideoCanvas, fileOverlayCanvas, 'file');
           fileFrameCount++;
           const now = Date.now();
           if (now - fileLastFpsTime >= 1000) {
@@ -322,19 +351,18 @@
       const fileOverlayCanvas = document.getElementById('fileOverlayCanvas');
       const ctx = fileOverlayCanvas.getContext('2d');
       ctx.clearRect(0, 0, fileOverlayCanvas.width, fileOverlayCanvas.height);
-      if (fileLastDetection && (Date.now() - fileDetectionTimestamp < detectionDisplayDuration)) {
-        const data = fileLastDetection;
-        if (data.bboxes && data.bboxes.length > 0) {
-          data.bboxes.forEach(det => {
-            const [x1, y1, x2, y2] = det.bbox_2d;
-            ctx.strokeStyle = "green";
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-            ctx.font = "14px Arial";
-            ctx.fillStyle = "green";
-            ctx.fillText(det.label, x1, y1 - 5);
-          });
-        }
+      if (fileLastDetection && (Date.now() - fileDetectionTimestamp < detectionDisplayDuration) && fileOriginalWidth) {
+        const scaleX = fileOverlayCanvas.width / fileOriginalWidth;
+        const scaleY = fileOverlayCanvas.height / fileOriginalHeight;
+        fileLastDetection.bboxes.forEach(det => {
+          const [x1, y1, x2, y2] = det.bbox_2d;
+          ctx.strokeStyle = "green";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x1 * scaleX, y1 * scaleY, (x2 - x1) * scaleX, (y2 - y1) * scaleY);
+          ctx.font = "14px Arial";
+          ctx.fillStyle = "green";
+          ctx.fillText(det.label, x1 * scaleX, (y1 * scaleY) - 5);
+        });
       }
       requestAnimationFrame(updateFileOverlay);
     }
@@ -353,7 +381,6 @@
         
         const img = document.createElement("img");
         img.src = dataURL;
-        // 保存索引，用于模态层导航
         img.dataset.index = fileThumbnailList.length;
         img.addEventListener("click", () => {
           showModal(fileThumbnailList, parseInt(img.dataset.index));
@@ -367,7 +394,6 @@
         
         document.getElementById('fileThumbnailContainer').appendChild(thumbnailItem);
         fileThumbnailList.push(dataURL);
-        // 限制显示5个缩略图
         while (fileThumbnailList.length > 5) {
           fileThumbnailList.shift();
           document.getElementById('fileThumbnailContainer').removeChild(document.getElementById('fileThumbnailContainer').firstChild);
@@ -457,7 +483,7 @@
           const blob = event.data;
           const streamVideoCanvas = document.getElementById('streamVideoCanvas');
           const streamOverlayCanvas = document.getElementById('streamOverlayCanvas');
-          drawImageOnCanvas(blob, streamVideoCanvas, streamOverlayCanvas);
+          drawImageOnCanvas(blob, streamVideoCanvas, streamOverlayCanvas, 'stream');
           streamFrameCount++;
           const now = Date.now();
           if (now - streamLastFpsTime >= 1000) {
@@ -495,19 +521,18 @@
       const streamOverlayCanvas = document.getElementById('streamOverlayCanvas');
       const ctx = streamOverlayCanvas.getContext('2d');
       ctx.clearRect(0, 0, streamOverlayCanvas.width, streamOverlayCanvas.height);
-      if (streamLastDetection && (Date.now() - streamDetectionTimestamp < detectionDisplayDuration)) {
-        const data = streamLastDetection;
-        if (data.bboxes && data.bboxes.length > 0) {
-          data.bboxes.forEach(det => {
-            const [x1, y1, x2, y2] = det.bbox_2d;
-            ctx.strokeStyle = "green";
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-            ctx.font = "14px Arial";
-            ctx.fillStyle = "green";
-            ctx.fillText(det.label, x1, y1 - 5);
-          });
-        }
+      if (streamLastDetection && (Date.now() - streamDetectionTimestamp < detectionDisplayDuration) && streamOriginalWidth) {
+        const scaleX = streamOverlayCanvas.width / streamOriginalWidth;
+        const scaleY = streamOverlayCanvas.height / streamOriginalHeight;
+        streamLastDetection.bboxes.forEach(det => {
+          const [x1, y1, x2, y2] = det.bbox_2d;
+          ctx.strokeStyle = "green";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x1 * scaleX, y1 * scaleY, (x2 - x1) * scaleX, (y2 - y1) * scaleY);
+          ctx.font = "14px Arial";
+          ctx.fillStyle = "green";
+          ctx.fillText(det.label, x1 * scaleX, (y1 * scaleY) - 5);
+        });
       }
       requestAnimationFrame(updateStreamOverlay);
     }
@@ -591,23 +616,50 @@
       modal.classList.remove("hidden");
     }
     
-    document.getElementById("modalPrev").addEventListener("click", () => {
+    document.getElementById("modalPrev").addEventListener("click", (e) => {
+      e.stopPropagation();
       if (currentModalList.length === 0) return;
       currentModalIndex = (currentModalIndex - 1 + currentModalList.length) % currentModalList.length;
       document.getElementById("modalImage").src = currentModalList[currentModalIndex];
     });
     
-    document.getElementById("modalNext").addEventListener("click", () => {
+    document.getElementById("modalNext").addEventListener("click", (e) => {
+      e.stopPropagation();
       if (currentModalList.length === 0) return;
       currentModalIndex = (currentModalIndex + 1) % currentModalList.length;
       document.getElementById("modalImage").src = currentModalList[currentModalIndex];
     });
     
-    // 点击模态层空白处关闭
     document.getElementById("imageModal").addEventListener("click", (e) => {
-      // 若点击的是左右导航按钮，则不关闭
       if(e.target.classList.contains("modal-nav")) return;
       document.getElementById("imageModal").classList.add("hidden");
+    });
+    
+    // 全屏播放功能
+    function toggleFullScreen(containerId) {
+      const container = document.getElementById(containerId);
+      if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => {
+          alert(`全屏错误: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    }
+    
+    document.getElementById("fileFullScreenButton").addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFullScreen("fileVideoContainer");
+    });
+    
+    document.getElementById("streamFullScreenButton").addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFullScreen("streamVideoContainer");
+    });
+    
+    // 监听全屏变化，确保视频容器居中（浏览器自动处理居中，全屏时 container 的宽高由浏览器决定）
+    document.addEventListener("fullscreenchange", () => {
+      // 如有需要可在此处增加调整逻辑
     });
   </script>
 </body>
