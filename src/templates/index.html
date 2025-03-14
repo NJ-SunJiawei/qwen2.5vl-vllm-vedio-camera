@@ -142,9 +142,9 @@
           <span id="progressText">0%</span>
         </div>
       </form>
-      <!-- 检测对象输入 -->
+      <!-- 检测对象输入（多个目标用逗号分隔） -->
       <div id="fileAnalyzeSection" class="mb-4 hidden">
-        <input type="text" id="fileObjectInput" placeholder="输入要检测的对象" class="border p-2 rounded">
+        <input type="text" id="fileObjectInput" placeholder="输入要检测的对象（多个用逗号分隔）" class="border p-2 rounded">
         <button id="fileAnalyzeButton" class="bg-green-500 text-white px-4 py-2 rounded ml-2">开始识别</button>
       </div>
       <!-- 视频播放与 FPS -->
@@ -159,10 +159,10 @@
       <div class="thumbnail-container" id="fileThumbnailContainer"></div>
     </div>
     
-    <!-- 互联网流模式（合并表单） -->
+    <!-- 互联网流模式 -->
     <div id="sectionStream" class="section">
       <form id="streamCombinedForm" class="mb-4">
-        <input type="text" id="streamObjectInput" placeholder="请输入检测对象" class="border p-2 rounded mr-2">
+        <input type="text" id="streamObjectInput" placeholder="请输入检测对象（多个用逗号分隔）" class="border p-2 rounded mr-2">
         <input type="text" id="streamUrlInput" placeholder="请输入流地址" class="border p-2 rounded w-1/2 mr-2">
         <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">开始拉流</button>
       </form>
@@ -215,7 +215,7 @@
     const detectionDisplayDuration = 1000;
     
     // ---------------------------
-    // 【本地视频模式】相关代码（保持原有逻辑）
+    // 【本地视频模式】相关代码
     let fileLastDetection = null;
     let fileDetectionTimestamp = 0;
     let fileFrameCount = 0;
@@ -265,7 +265,7 @@
           try {
             const data = JSON.parse(jsonStr);
             console.log("本地视频接收到检测结果:", data);
-            if (data.bbox && data.bbox.length === 4 && data.bbox.some(coord => coord !== 0)) {
+            if (data.bboxes && data.bboxes.length > 0) {
               fileLastDetection = data;
               fileDetectionTimestamp = Date.now();
               addFileThumbnail();
@@ -284,14 +284,16 @@
       ctx.clearRect(0, 0, fileOverlayCanvas.width, fileOverlayCanvas.height);
       if (fileLastDetection && (Date.now() - fileDetectionTimestamp < detectionDisplayDuration)) {
         const data = fileLastDetection;
-        if (data.bbox && data.bbox.length === 4) {
-          const [x1, y1, x2, y2] = data.bbox;
-          ctx.strokeStyle = "green";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-          ctx.font = "14px Arial";
-          ctx.fillStyle = "green";
-          ctx.fillText(data.label, x1, y1 - 5);
+        if (data.bboxes && data.bboxes.length > 0) {
+          data.bboxes.forEach(det => {
+            const [x1, y1, x2, y2] = det.bbox_2d;
+            ctx.strokeStyle = "green";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+            ctx.font = "14px Arial";
+            ctx.fillStyle = "green";
+            ctx.fillText(det.label, x1, y1 - 5);
+          });
         }
       }
       requestAnimationFrame(updateFileOverlay);
@@ -428,7 +430,11 @@
           try {
             const data = JSON.parse(jsonStr);
             console.log("互联网流接收到检测结果:", data);
-            if (data.bbox && data.bbox.length === 4 && data.bbox.some(coord => coord !== 0)) {
+            // 遍历检测结果，打印每个目标的bbox和label
+            if (data.bboxes && data.bboxes.length > 0) {
+              data.bboxes.forEach(item => {
+                console.log("bbox:", item.bbox_2d, "label:", item.label);
+              });
               streamLastDetection = data;
               streamDetectionTimestamp = Date.now();
               addStreamThumbnail();
@@ -446,14 +452,16 @@
       ctx.clearRect(0, 0, streamOverlayCanvas.width, streamOverlayCanvas.height);
       if (streamLastDetection && (Date.now() - streamDetectionTimestamp < detectionDisplayDuration)) {
         const data = streamLastDetection;
-        if (data.bbox && data.bbox.length === 4) {
-          const [x1, y1, x2, y2] = data.bbox;
-          ctx.strokeStyle = "green";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-          ctx.font = "14px Arial";
-          ctx.fillStyle = "green";
-          ctx.fillText(data.label, x1, y1 - 5);
+        if (data.bboxes && data.bboxes.length > 0) {
+          data.bboxes.forEach(det => {
+            const [x1, y1, x2, y2] = det.bbox_2d;
+            ctx.strokeStyle = "green";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+            ctx.font = "14px Arial";
+            ctx.fillStyle = "green";
+            ctx.fillText(det.label, x1, y1 - 5);
+          });
         }
       }
       requestAnimationFrame(updateStreamOverlay);

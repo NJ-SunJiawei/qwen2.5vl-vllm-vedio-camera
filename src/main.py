@@ -46,9 +46,6 @@ ordered_result_queue = asyncio.Queue()  # 用于存储处理结果
 stream_frame_queue = asyncio.Queue()
 stream_ordered_result_queue = asyncio.Queue()  # 用于存储网络流处理结果
 
-# WebSocket 客户端存储（新增网络流的单独存储）
-stream_clients = set()
-
 # 网络流检测目标（由 /stream/analyze 设置）
 stream_object_str = ""
 
@@ -62,13 +59,17 @@ class AnalyzeRequest(BaseModel):
     filename: str
 
 async def analyze_frame(frame_np: bytes, object_str: str):
-    """ 使用二进制图片数据进行目标检测 """
+    """
+    使用二进制图片数据进行目标检测。
+    支持多个检测目标（用逗号分隔），返回结果格式为：
+      {"bboxes": [ {"bbox_2d": [x1, y1, x2, y2], "label": "目标名称"}, ... ]}
+    """
     base64_image = base64.b64encode(frame_np).decode('utf-8')
     prompt_str = f"""
-    Analyze the image and extract the bounding box coordinates for the object '{object_str}'.
-    Provide the response in this fixed format: 
-    {{"bbox_2d": [x1, y1, x2, y2], "label": "{object_str}"}}
-    If the object is not found, return an empty bbox_2d.
+    Analyze the image and extract the bounding box coordinates for the objects specified in the list: {object_str}.
+    For each object found, return a JSON array of detections in the following format:
+    [{{"bbox_2d": [x1, y1, x2, y2], "label": "object_label"}}, ...]
+    If an object is not found, do not include it in the list. If no objects are found, return an empty list.
     """
     print("Sending request to OpenAI...")
     try:
@@ -88,18 +89,18 @@ async def analyze_frame(frame_np: bytes, object_str: str):
             response_text = response_text[7:-3].strip()
         try:
             data = json.loads(response_text)
-            if isinstance(data, list):
-                data = data[0]
+            # 保证返回的是一个列表
+            if not isinstance(data, list):
+                data = []
             return {
-                "bbox": data.get("bbox_2d", []),
-                "label": data.get("label", object_str)
+                "bboxes": data
             }
         except json.JSONDecodeError as e:
             print(f"JSON decode error: {e}")
-            return {"bbox": [], "label": object_str}
+            return {"bboxes": []}
     except Exception as e:
         print(f"Error during analysis: {e}")
-        return {"bbox": [], "label": object_str}
+        return {"bboxes": []}
 
 # 使用线程池，避免频繁创建进程
 thread_executor = ThreadPoolExecutor(max_workers=4)
@@ -127,7 +128,6 @@ async def frame_worker():
         frame_info = await frame_queue.get()
         binary_frame, object_str, second, frame_id = frame_info
 
-        # 根据队列当前负载动态调整跳帧因子
         effective_skip = get_effective_skip(frame_queue.qsize(), FRAME_SKIP)
         if frame_id % effective_skip == 0:
             try:
@@ -137,9 +137,9 @@ async def frame_worker():
                 )
             except Exception as e:
                 print(f"Frame {frame_id} processing error: {e}")
-                result = {"bbox": [], "label": object_str}
+                result = {"bboxes": []}
         else:
-            result = {"bbox": [], "label": object_str}
+            result = {"bboxes": []}
 
         await ordered_result_queue.put((frame_id, binary_frame, result))
         print(f"Frame {frame_id} processed. Queue size: {ordered_result_queue.qsize()}")
@@ -174,9 +174,9 @@ async def stream_frame_worker():
                 )
             except Exception as e:
                 print(f"Stream Frame {frame_id} processing error: {e}")
-                result = {"bbox": [], "label": object_str}
+                result = {"bboxes": []}
         else:
-            result = {"bbox": [], "label": object_str}
+            result = {"bboxes": []}
 
         await stream_ordered_result_queue.put((frame_id, binary_frame, result))
         stream_frame_queue.task_done()
@@ -218,13 +218,12 @@ async def stream_video_reader(stream_url: str):
             _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
             binary_frame = buffer.tobytes()
             second = frame_id // int(fps)
-            # 使用当前设置的检测对象（由 /stream/analyze 设置）
             await stream_frame_queue.put((binary_frame, stream_object_str, second, frame_id))
         frame_id += 1
         await asyncio.sleep(0)  # 让出控制权
     cap.release()
 
-# WebSocket 端点：本地视频（原有）
+# WebSocket 端点：本地视频
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -237,7 +236,7 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"WebSocket error: {e}")
         file_clients.remove(websocket)
 
-# 新增 WebSocket 端点：网络流
+# WebSocket 端点：网络流
 @app.websocket("/ws/stream")
 async def websocket_stream(websocket: WebSocket):
     await websocket.accept()
@@ -250,7 +249,7 @@ async def websocket_stream(websocket: WebSocket):
         print(f"网络流 WebSocket error: {e}")
         stream_clients.remove(websocket)
 
-# 上传文件（本地视频）接口（原有）
+# 上传文件（本地视频）接口
 @app.post("/upload")
 async def upload_video(video: UploadFile = File(...)):
     print("视频上传，保存中...")
@@ -259,7 +258,7 @@ async def upload_video(video: UploadFile = File(...)):
         shutil.copyfileobj(video.file, buffer)
     return {"status": "success", "message": "视频上传成功", "filename": video.filename}
 
-# 本地视频分析接口（原有）
+# 本地视频分析接口
 @app.post("/analyze")
 async def analyze_video(request: AnalyzeRequest):
     object_str = request.object_str
@@ -296,7 +295,7 @@ async def analyze_video(request: AnalyzeRequest):
     os.remove(video_path)
     return {"status": "processing", "message": "视频分析中..."}
 
-# 新增接口：启动网络流拉流，支持RTSP等流地址
+# 启动网络流拉流接口
 class StreamRequest(BaseModel):
     stream_url: str
 
@@ -306,11 +305,10 @@ async def start_stream(request: StreamRequest, background_tasks: BackgroundTasks
     if not stream_url:
         return {"status": "error", "message": "缺少流地址"}
     print(f"启动网络流拉流，流地址: {stream_url}")
-    # 启动后台任务拉取流
     background_tasks.add_task(stream_video_reader, stream_url)
     return {"status": "success", "message": "网络流拉流启动", "stream_url": stream_url}
 
-# 新增接口：设置网络流检测目标
+# 设置网络流检测目标接口
 class StreamAnalyzeRequest(BaseModel):
     object_str: str
 
