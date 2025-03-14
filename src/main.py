@@ -1,4 +1,4 @@
-#apt install ffmpeg
+# apt install ffmpeg
 
 from fastapi import FastAPI, WebSocket, UploadFile, File, Request, BackgroundTasks
 from fastapi.templating import Jinja2Templates
@@ -14,7 +14,7 @@ from pathlib import Path
 import shutil
 import os
 import time
-from multiprocessing import Process, Queue
+from concurrent.futures import ThreadPoolExecutor
 
 app = FastAPI()
 
@@ -32,8 +32,8 @@ file_clients = set()
 stream_clients = set()
 
 # 参数设置
-TARGET_FPS = 30          # 分析帧率
-FRAME_SKIP = 50          # 每处理50帧做一次检测
+TARGET_FPS = 20          # 分析帧率
+FRAME_SKIP = 50          # 每处理50帧做一次检测（基础值，动态调整）
 TARGET_SEND_FPS = 20     # WebSocket 发送帧率控制
 
 last_send_time = time.time()
@@ -53,25 +53,8 @@ stream_clients = set()
 stream_object_str = ""
 
 # 上传文件保存目录
-from pathlib import Path
-import shutil
-import os
-import time
-import json
-import base64
-import cv2
-import numpy as np
-import asyncio
-from multiprocessing import Process, Queue
-from pydantic import BaseModel
-
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
-
-# 参数设置
-TARGET_FPS = 30          # 分析帧率
-FRAME_SKIP = 50          # 每处理50帧做一次检测
-TARGET_SEND_FPS = 20     # WebSocket 发送帧率控制
 
 # 定义分析请求体模型（文件视频）
 class AnalyzeRequest(BaseModel):
@@ -118,30 +101,38 @@ async def analyze_frame(frame_np: bytes, object_str: str):
         print(f"Error during analysis: {e}")
         return {"bbox": [], "label": object_str}
 
-def process_frame(frame_np, object_str, result_queue):
-    """ 进程中处理帧 """
-    result = asyncio.run(analyze_frame(frame_np, object_str))
-    result_queue.put(result)
+# 使用线程池，避免频繁创建进程
+thread_executor = ThreadPoolExecutor(max_workers=4)
 
 def process_frame_wrapper(frame_np, object_str):
-    """ 同步包装进程调用 """
-    result_queue = Queue()
-    process = Process(target=process_frame, args=(frame_np, object_str, result_queue))
-    process.start()
-    process.join()
-    return result_queue.get()
+    """
+    使用线程池异步执行 analyze_frame，替代原来的多进程调用。
+    """
+    future = thread_executor.submit(lambda: asyncio.run(analyze_frame(frame_np, object_str)))
+    return future.result()
 
-# 原有文件视频帧处理任务
+# 根据当前队列负载动态计算有效跳帧因子
+def get_effective_skip(queue_size, base_skip=FRAME_SKIP):
+    if queue_size > 50:
+        return base_skip * 2
+    elif queue_size > 20:
+        return int(base_skip * 1.5)
+    else:
+        return base_skip
+
+# 原有文件视频帧处理任务，修改为动态跳帧和线程池调用
 async def frame_worker():
     loop = asyncio.get_running_loop()
     while True:
         frame_info = await frame_queue.get()
         binary_frame, object_str, second, frame_id = frame_info
 
-        if frame_id % FRAME_SKIP == 0:
+        # 根据队列当前负载动态调整跳帧因子
+        effective_skip = get_effective_skip(frame_queue.qsize(), FRAME_SKIP)
+        if frame_id % effective_skip == 0:
             try:
                 result = await loop.run_in_executor(
-                    None, 
+                    None,
                     lambda: process_frame_wrapper(binary_frame, object_str)
                 )
             except Exception as e:
@@ -167,17 +158,18 @@ async def send_results():
         sleep_time = max(0, interval - processing_time)
         await asyncio.sleep(sleep_time)
 
-# 新增网络流视频帧处理任务
+# 新增网络流视频帧处理任务，修改为动态跳帧和线程池调用
 async def stream_frame_worker():
     loop = asyncio.get_running_loop()
     while True:
         frame_info = await stream_frame_queue.get()
         binary_frame, object_str, second, frame_id = frame_info
 
-        if frame_id % FRAME_SKIP == 0 and object_str:
+        effective_skip = get_effective_skip(stream_frame_queue.qsize(), FRAME_SKIP)
+        if frame_id % effective_skip == 0 and object_str:
             try:
                 result = await loop.run_in_executor(
-                    None, 
+                    None,
                     lambda: process_frame_wrapper(binary_frame, object_str)
                 )
             except Exception as e:
@@ -187,7 +179,6 @@ async def stream_frame_worker():
             result = {"bbox": [], "label": object_str}
 
         await stream_ordered_result_queue.put((frame_id, binary_frame, result))
-#        print(f"Stream Frame {frame_id} processed. Queue size: {stream_ordered_result_queue.qsize()}")
         stream_frame_queue.task_done()
 
 async def send_stream_results():
@@ -229,7 +220,6 @@ async def stream_video_reader(stream_url: str):
             second = frame_id // int(fps)
             # 使用当前设置的检测对象（由 /stream/analyze 设置）
             await stream_frame_queue.put((binary_frame, stream_object_str, second, frame_id))
-#            print(f"Stream Frame {frame_id} added to stream_frame_queue")
         frame_id += 1
         await asyncio.sleep(0)  # 让出控制权
     cap.release()
