@@ -32,9 +32,9 @@ file_clients = set()
 stream_clients = set()
 
 # 参数设置
-TARGET_FPS = 15          # 分析帧率
+TARGET_FPS = 20          # 分析帧率
 FRAME_SKIP = 50          # 每处理50帧做一次检测（基础值，动态调整）
-TARGET_SEND_FPS = 10     # WebSocket 发送帧率控制
+TARGET_SEND_FPS = 15     # WebSocket 发送帧率控制
 
 last_send_time = time.time()
 
