@@ -223,6 +223,21 @@
     let fileCurrentFPS = 0;
     let fileWs;
     
+    // 优化：使用createImageBitmap替代新建Image对象
+    function drawImageOnCanvas(blob, canvas, overlayCanvas) {
+      createImageBitmap(blob).then(imgBitmap => {
+        // 仅在尺寸不一致时更新
+        if (canvas.width !== imgBitmap.width || canvas.height !== imgBitmap.height) {
+          canvas.width = imgBitmap.width;
+          canvas.height = imgBitmap.height;
+          overlayCanvas.width = imgBitmap.width;
+          overlayCanvas.height = imgBitmap.height;
+        }
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imgBitmap, 0, 0);
+      }).catch(err => console.error("createImageBitmap error:", err));
+    }
+    
     function initFileWebSocket() {
       fileWs = new WebSocket(`ws://${window.location.host}/ws`);
       fileWs.binaryType = "blob";
@@ -232,29 +247,17 @@
       fileWs.onmessage = async (event) => {
         if (event.data instanceof Blob) {
           const blob = event.data;
-          const url = URL.createObjectURL(blob);
-          const img = new Image();
-          img.src = url;
-          img.onload = () => {
-            const fileVideoCanvas = document.getElementById('fileVideoCanvas');
-            const fileOverlayCanvas = document.getElementById('fileOverlayCanvas');
-            if (fileVideoCanvas.width !== img.width || fileVideoCanvas.height !== img.height) {
-              fileVideoCanvas.width = img.width;
-              fileVideoCanvas.height = img.height;
-              fileOverlayCanvas.width = img.width;
-              fileOverlayCanvas.height = img.height;
-            }
-            const ctx = fileVideoCanvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, img.width, img.height);
-            fileFrameCount++;
-            const now = Date.now();
-            if (now - fileLastFpsTime >= 1000) {
-              fileCurrentFPS = fileFrameCount;
-              fileFrameCount = 0;
-              fileLastFpsTime = now;
-              document.getElementById('fileFpsDisplay').innerText = `FPS: ${fileCurrentFPS}`;
-            }
-          };
+          const fileVideoCanvas = document.getElementById('fileVideoCanvas');
+          const fileOverlayCanvas = document.getElementById('fileOverlayCanvas');
+          drawImageOnCanvas(blob, fileVideoCanvas, fileOverlayCanvas);
+          fileFrameCount++;
+          const now = Date.now();
+          if (now - fileLastFpsTime >= 1000) {
+            fileCurrentFPS = fileFrameCount;
+            fileFrameCount = 0;
+            fileLastFpsTime = now;
+            document.getElementById('fileFpsDisplay').innerText = `FPS: ${fileCurrentFPS}`;
+          }
         } else {
           let jsonStr;
           if (typeof event.data === "string") {
@@ -397,29 +400,17 @@
       streamWs.onmessage = async (event) => {
         if (event.data instanceof Blob) {
           const blob = event.data;
-          const url = URL.createObjectURL(blob);
-          const img = new Image();
-          img.src = url;
-          img.onload = () => {
-            const streamVideoCanvas = document.getElementById('streamVideoCanvas');
-            const streamOverlayCanvas = document.getElementById('streamOverlayCanvas');
-            if (streamVideoCanvas.width !== img.width || streamVideoCanvas.height !== img.height) {
-              streamVideoCanvas.width = img.width;
-              streamVideoCanvas.height = img.height;
-              streamOverlayCanvas.width = img.width;
-              streamOverlayCanvas.height = img.height;
-            }
-            const ctx = streamVideoCanvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, img.width, img.height);
-            streamFrameCount++;
-            const now = Date.now();
-            if (now - streamLastFpsTime >= 1000) {
-              streamCurrentFPS = streamFrameCount;
-              streamFrameCount = 0;
-              streamLastFpsTime = now;
-              document.getElementById('streamFpsDisplay').innerText = `FPS: ${streamCurrentFPS}`;
-            }
-          };
+          const streamVideoCanvas = document.getElementById('streamVideoCanvas');
+          const streamOverlayCanvas = document.getElementById('streamOverlayCanvas');
+          drawImageOnCanvas(blob, streamVideoCanvas, streamOverlayCanvas);
+          streamFrameCount++;
+          const now = Date.now();
+          if (now - streamLastFpsTime >= 1000) {
+            streamCurrentFPS = streamFrameCount;
+            streamFrameCount = 0;
+            streamLastFpsTime = now;
+            document.getElementById('streamFpsDisplay').innerText = `FPS: ${streamCurrentFPS}`;
+          }
         } else {
           let jsonStr;
           if (typeof event.data === "string") {
@@ -430,7 +421,6 @@
           try {
             const data = JSON.parse(jsonStr);
             console.log("互联网流接收到检测结果:", data);
-            // 遍历检测结果，打印每个目标的bbox和label
             if (data.bboxes && data.bboxes.length > 0) {
               data.bboxes.forEach(item => {
                 console.log("bbox:", item.bbox_2d, "label:", item.label);
@@ -499,7 +489,6 @@
         return;
       }
       try {
-        // 先设置检测目标
         const analyzeResponse = await fetch('/stream/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -508,7 +497,6 @@
         if (!analyzeResponse.ok) throw new Error("检测目标设置失败");
         console.log("检测目标设置成功");
         
-        // 再启动拉流
         const streamResponse = await fetch('/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
