@@ -70,12 +70,25 @@
       gap: 10px;
       flex-wrap: wrap;
     }
-    .thumbnail-container img {
-      width: 80px;
-      height: auto;
+    .thumbnail-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       border: 1px solid #ccc;
       border-radius: 4px;
+      padding: 4px;
+    }
+    .thumbnail-item img {
+      width: 80px;
+      height: auto;
       cursor: pointer;
+    }
+    .thumbnail-label {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #333;
+      text-align: center;
+      word-break: break-all;
     }
     #progressContainer {
       width: 100%;
@@ -303,17 +316,34 @@
     }
     updateFileOverlay();
     
+    // 添加缩略图时，在图片下方显示所有label（多个目标以逗号分隔）
     function addFileThumbnail() {
       const fileVideoCanvas = document.getElementById('fileVideoCanvas');
-      if (fileVideoCanvas.width && fileVideoCanvas.height) {
+      if (fileVideoCanvas.width && fileVideoCanvas.height && fileLastDetection) {
         const dataURL = fileVideoCanvas.toDataURL("image/jpeg", 0.5);
+        // 获取所有label，去重后以逗号分隔显示
+        const labels = fileLastDetection.bboxes.map(det => det.label);
+        const uniqueLabels = [...new Set(labels)];
+        const labelText = uniqueLabels.join(", ");
+        
+        // 创建缩略图容器
+        const thumbnailItem = document.createElement("div");
+        thumbnailItem.className = "thumbnail-item";
+        
         const img = document.createElement("img");
         img.src = dataURL;
         img.addEventListener("click", () => {
           showModal(dataURL);
         });
+        thumbnailItem.appendChild(img);
+        
+        const labelDiv = document.createElement("div");
+        labelDiv.className = "thumbnail-label";
+        labelDiv.innerText = labelText;
+        thumbnailItem.appendChild(labelDiv);
+        
         const container = document.getElementById('fileThumbnailContainer');
-        container.appendChild(img);
+        container.appendChild(thumbnailItem);
         while (container.children.length > 5) {
           container.removeChild(container.firstChild);
         }
@@ -458,17 +488,32 @@
     }
     updateStreamOverlay();
     
+    // 添加缩略图（互联网流版），在图片下方显示所有label
     function addStreamThumbnail() {
       const streamVideoCanvas = document.getElementById('streamVideoCanvas');
-      if (streamVideoCanvas.width && streamVideoCanvas.height) {
+      if (streamVideoCanvas.width && streamVideoCanvas.height && streamLastDetection) {
         const dataURL = streamVideoCanvas.toDataURL("image/jpeg", 0.5);
+        const labels = streamLastDetection.bboxes.map(det => det.label);
+        const uniqueLabels = [...new Set(labels)];
+        const labelText = uniqueLabels.join(", ");
+        
+        const thumbnailItem = document.createElement("div");
+        thumbnailItem.className = "thumbnail-item";
+        
         const img = document.createElement("img");
         img.src = dataURL;
         img.addEventListener("click", () => {
           showModal(dataURL);
         });
+        thumbnailItem.appendChild(img);
+        
+        const labelDiv = document.createElement("div");
+        labelDiv.className = "thumbnail-label";
+        labelDiv.innerText = labelText;
+        thumbnailItem.appendChild(labelDiv);
+        
         const container = document.getElementById('streamThumbnailContainer');
-        container.appendChild(img);
+        container.appendChild(thumbnailItem);
         while (container.children.length > 5) {
           container.removeChild(container.firstChild);
         }
