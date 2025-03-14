@@ -52,7 +52,6 @@
     }
     canvas {
       display: block;
-      /* 使用100%宽度，让浏览器根据容器缩放 */
       width: 100%;
       height: auto;
     }
@@ -147,7 +146,6 @@
       border: 4px solid #fff;
       border-radius: 8px;
     }
-    /* 左右导航按钮 */
     .modal-nav {
       position: absolute;
       top: 50%;
@@ -239,7 +237,7 @@
     let streamThumbnailList = [];
     let currentModalList = [];
     let currentModalIndex = 0;
-    // 记录原始尺寸
+    // 记录原始尺寸（原始解码尺寸）
     let fileOriginalWidth = 0, fileOriginalHeight = 0;
     let streamOriginalWidth = 0, streamOriginalHeight = 0;
     
@@ -281,10 +279,9 @@
     let fileCurrentFPS = 0;
     let fileWs;
     
-    // 优化：使用 createImageBitmap 替代新建 Image 对象
+    // 使用 createImageBitmap() 优化图像解码，同时记录原始尺寸
     function drawImageOnCanvas(blob, canvas, overlayCanvas, type) {
       createImageBitmap(blob).then(imgBitmap => {
-        // 若第一次加载则记录原始尺寸
         if(type === 'file' && fileOriginalWidth === 0){
           fileOriginalWidth = imgBitmap.width;
           fileOriginalHeight = imgBitmap.height;
@@ -292,7 +289,7 @@
           streamOriginalWidth = imgBitmap.width;
           streamOriginalHeight = imgBitmap.height;
         }
-        // 仅在尺寸不一致时更新（注意：这里设置 canvas.width/height 为 DOM 属性会重置内部绘图区域）
+        // 设置画布尺寸（保持原始分辨率）
         if(canvas.width !== imgBitmap.width || canvas.height !== imgBitmap.height){
           canvas.width = imgBitmap.width;
           canvas.height = imgBitmap.height;
@@ -347,13 +344,15 @@
     }
     initFileWebSocket();
     
+    // 修改 overlay 绘制：采用 getBoundingClientRect() 获取显示尺寸
     function updateFileOverlay() {
       const fileOverlayCanvas = document.getElementById('fileOverlayCanvas');
       const ctx = fileOverlayCanvas.getContext('2d');
       ctx.clearRect(0, 0, fileOverlayCanvas.width, fileOverlayCanvas.height);
       if (fileLastDetection && (Date.now() - fileDetectionTimestamp < detectionDisplayDuration) && fileOriginalWidth) {
-        const scaleX = fileOverlayCanvas.width / fileOriginalWidth;
-        const scaleY = fileOverlayCanvas.height / fileOriginalHeight;
+        const rect = fileOverlayCanvas.getBoundingClientRect();
+        const scaleX = rect.width / fileOriginalWidth;
+        const scaleY = rect.height / fileOriginalHeight;
         fileLastDetection.bboxes.forEach(det => {
           const [x1, y1, x2, y2] = det.bbox_2d;
           ctx.strokeStyle = "green";
@@ -522,8 +521,9 @@
       const ctx = streamOverlayCanvas.getContext('2d');
       ctx.clearRect(0, 0, streamOverlayCanvas.width, streamOverlayCanvas.height);
       if (streamLastDetection && (Date.now() - streamDetectionTimestamp < detectionDisplayDuration) && streamOriginalWidth) {
-        const scaleX = streamOverlayCanvas.width / streamOriginalWidth;
-        const scaleY = streamOverlayCanvas.height / streamOriginalHeight;
+        const rect = streamOverlayCanvas.getBoundingClientRect();
+        const scaleX = rect.width / streamOriginalWidth;
+        const scaleY = rect.height / streamOriginalHeight;
         streamLastDetection.bboxes.forEach(det => {
           const [x1, y1, x2, y2] = det.bbox_2d;
           ctx.strokeStyle = "green";
@@ -657,9 +657,9 @@
       toggleFullScreen("streamVideoContainer");
     });
     
-    // 监听全屏变化，确保视频容器居中（浏览器自动处理居中，全屏时 container 的宽高由浏览器决定）
+    // 全屏后监听尺寸变化（可选：这里自动重绘）
     document.addEventListener("fullscreenchange", () => {
-      // 如有需要可在此处增加调整逻辑
+      // 可根据需要进行额外处理
     });
   </script>
 </body>
