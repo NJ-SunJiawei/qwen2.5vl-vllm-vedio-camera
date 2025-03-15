@@ -45,7 +45,8 @@ FRAME_SKIP = 200             # 基础跳帧数（用于检测抽帧）
 
 client = OpenAI(
     base_url="http://124.220.202.52:8000/v1",
-    api_key="EMPTY"
+    api_key="EMPTY",
+    max_retries=0  # 只重试 0 次
 )
 
 UPLOAD_DIR = Path("uploads")
