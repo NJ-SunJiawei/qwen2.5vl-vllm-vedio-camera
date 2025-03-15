@@ -1,0 +1,474 @@
+import asyncio
+import base64
+import cv2
+import json
+import numpy as np
+import os
+import shutil
+import time
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+import threading
+import logging
+import collections
+
+from fastapi import FastAPI, WebSocket, UploadFile, File, Request, BackgroundTasks
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
+# 请确保 openai 模块已正确安装和配置
+from openai import OpenAI
+
+# --------------------
+# 日志配置：支持不同级别的日志打印
+# --------------------
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+app = FastAPI()
+templates = Jinja2Templates(directory="templates")
+
+# --------------------
+# 宏开关设置
+# --------------------
+# True：在 worker 中直接发送结果（send_result 限制 FPS，不通过独立发送队列）
+# False：使用原先的发送队列模式，通过独立的发送任务完成发送
+DIRECT_SEND_MODE = False
+# --------------------
+# 配置及全局变量
+# --------------------
+WORKER_COUNT = 4             # 处理帧的工作线程数量
+SEND_WORKER_COUNT = 4        # 发送任务的工作线程数量（仅在 DIRECT_SEND_MODE=False 时使用）
+OPENAI_WORKER_COUNT = 10     # 调用大模型线程池数量
+TARGET_FPS = 50              # 发送帧率（用于限制发送速度,暂时处理效率跟不上无效）
+ANALYSIS_FPS = 20            # 分析帧率（用于降低原始帧）
+FRAME_SKIP = 500             # 基础跳帧数（用于检测抽帧）
+
+client = OpenAI(
+    base_url="http://124.220.202.52:8000/v1",
+    api_key="EMPTY",
+    max_retries=0  # 只重试 0 次
+)
+
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+# 全局工作队列，每个工作线程对应一个 asyncio.Queue
+worker_queues = [asyncio.Queue() for _ in range(WORKER_COUNT)]
+# 增加线程池的最大线程数，便于处理更多并发任务
+thread_executor = ThreadPoolExecutor(max_workers=OPENAI_WORKER_COUNT)
+
+# 仅在 DIRECT_SEND_MODE=False 时启用发送队列与独立发送任务
+file_send_queues = [asyncio.Queue() for _ in range(SEND_WORKER_COUNT)]
+stream_send_queues = [asyncio.Queue() for _ in range(SEND_WORKER_COUNT)]
+
+# 多用户会话管理（session_id 映射到 WebSocket 连接）
+file_sessions = {}    # 本地视频会话
+stream_sessions = {}  # 互联网流会话
+
+# 针对互联网流，每个 session 可能有不同的检测目标
+stream_detection = {}  # 键：session_id，值：检测目标字符串
+
+# 新增：为每个互联网流会话设置状态，状态可为 "running"、"paused"、"stopped"
+stream_state = {}      # 键：session_id，值：状态字符串
+
+# 为防止并发调用 OpenAI API 导致连接错误，增加全局信号量，限制同时并发调用数量
+analysis_semaphore = threading.Semaphore(5)
+
+# 在直接发送模式下，为每个 session 设置发送锁和上一次发送时间，确保发送间隔
+direct_send_locks = {}       # key: session_id, value: asyncio.Lock()
+direct_send_last_time = {}   # key: session_id, value: timestamp (float)
+
+# --------------------
+# 公共函数
+# --------------------
+def get_effective_skip(queue_size, base_skip=FRAME_SKIP):
+    if queue_size > 50:
+        return base_skip * 2
+    elif queue_size > 20:
+        return int(base_skip * 1.5)
+    else:
+        return base_skip
+
+async def analyze_frame(session_id: str, frame_id: int, frame_np: bytes, object_str: str):
+    base64_image = base64.b64encode(frame_np).decode('utf-8')
+    prompt_str = f"""
+    Analyze the image and extract the bounding box coordinates for the objects specified in the list: {object_str}.
+    For each object found, return a JSON array of detections in the following format:
+    [{{"bbox_2d": [x1, y1, x2, y2], "label": "object_label"}}, ...]
+    If an object is not found, do not include it. If none found, return an empty list.
+    """
+    logging.info(f"Sending request to OpenAI, session: {session_id}, frame: {frame_id}")
+    try:
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
+            model="Qwen/Qwen2.5-VL-3B-Instruct",
+            messages=[{"role": "user", "content": [
+                {"type": "text", "text": prompt_str},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+            ]}],
+            max_tokens=1024,
+        )
+        response_text = response.choices[0].message.content.strip()
+        if response_text.startswith("```json") and response_text.endswith("```"):
+            response_text = response_text[7:-3].strip()
+        try:
+            data = json.loads(response_text)
+            if not isinstance(data, list):
+                data = []
+            return {"bboxes": data}
+        except json.JSONDecodeError as e:
+            logging.error(f"JSON decode error: {e}")
+            return {"bboxes": []}
+    except Exception as e:
+        logging.error(f"Error during analysis, session: {session_id}, frame: {frame_id}: {e}")
+        raise
+
+def process_frame_wrapper(session_id, frame_id, frame_np, object_str):
+    # 增加重试机制，最多重试 1 次
+    for attempt in range(1):
+        try:
+            with analysis_semaphore:
+                future = thread_executor.submit(
+                    lambda: asyncio.run(analyze_frame(session_id, frame_id, frame_np, object_str))
+                )
+                return future.result()
+        except Exception as e:
+            logging.error(f"Attempt {attempt+1} failed for session {session_id}, frame {frame_id}: {e}")
+            time.sleep(1)
+    return {"bboxes": []}
+
+async def send_result_direct(session_id: str, binary_frame: bytes, result: dict, mode: str):
+    ws = file_sessions.get(session_id) if mode == "file" else stream_sessions.get(session_id)
+    if not ws:
+        return
+    lock = direct_send_locks.setdefault(session_id, asyncio.Lock())
+    async with lock:
+        now = time.time()
+        last_time = direct_send_last_time.get(session_id, 0)
+        interval = 1 / TARGET_FPS
+        sleep_time = interval - (now - last_time)
+        if sleep_time > 0:
+            await asyncio.sleep(sleep_time)
+        try:
+            await ws.send_bytes(binary_frame)
+            await ws.send_json(result)
+        except Exception as e:
+            logging.error(f"Error sending result for session {session_id}: {e}")
+        direct_send_last_time[session_id] = time.time()
+
+async def send_file_results_worker(worker_index: int):
+    interval = 1 / TARGET_FPS
+    while True:
+        start_time = time.time()
+        if not file_send_queues[worker_index].empty():
+            session_id, binary_frame, result = await file_send_queues[worker_index].get()
+            ws = file_sessions.get(session_id)
+            if ws:
+                try:
+                    await ws.send_bytes(binary_frame)
+                    await ws.send_json(result)
+                except Exception as e:
+                    logging.error(f"Error sending file result for session {session_id}: {e}")
+            file_send_queues[worker_index].task_done()
+        processing_time = time.time() - start_time
+        sleep_time = max(0, interval - processing_time)
+        await asyncio.sleep(sleep_time)
+
+async def send_stream_results_worker(worker_index: int):
+    interval = 1 / TARGET_FPS
+    while True:
+        start_time = time.time()
+        if not stream_send_queues[worker_index].empty():
+            session_id, binary_frame, result = await stream_send_queues[worker_index].get()
+            ws = stream_sessions.get(session_id)
+            if ws:
+                try:
+                    await ws.send_bytes(binary_frame)
+                    await ws.send_json(result)
+                except Exception as e:
+                    logging.error(f"Error sending stream result for session {session_id}: {e}")
+            stream_send_queues[worker_index].task_done()
+        processing_time = time.time() - start_time
+        sleep_time = max(0, interval - processing_time)
+        await asyncio.sleep(sleep_time)
+
+# 清除指定 session 的所有队列数据
+async def clear_session_queues(session_id: str):
+    for q in worker_queues:
+        new_deque = collections.deque(item for item in q._queue if item[0] != session_id)
+        q._queue = new_deque
+    for q in file_send_queues:
+        new_deque = collections.deque(item for item in q._queue if item[0] != session_id)
+        q._queue = new_deque
+    for q in stream_send_queues:
+        new_deque = collections.deque(item for item in q._queue if item[0] != session_id)
+        q._queue = new_deque
+
+async def worker_task(worker_id: int, queue: asyncio.Queue):
+    loop = asyncio.get_running_loop()
+    while True:
+        session_id, frame_id, binary_frame, object_str, second, mode = await queue.get()
+        effective_skip = get_effective_skip(queue.qsize(), FRAME_SKIP)
+        if frame_id % effective_skip == 0 and object_str:
+            try:
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: process_frame_wrapper(session_id, frame_id, binary_frame, object_str)
+                )
+            except Exception as e:
+                logging.error(f"Frame {frame_id} processing error for session {session_id}: {e}")
+                result = {"bboxes": []}
+        else:
+            result = {"bboxes": []}
+        if DIRECT_SEND_MODE:
+            await send_result_direct(session_id, binary_frame, result, mode)
+        else:
+            if mode == "file":
+                send_worker_index = hash(session_id) % SEND_WORKER_COUNT
+                await file_send_queues[send_worker_index].put((session_id, binary_frame, result))
+            else:
+                send_worker_index = hash(session_id) % SEND_WORKER_COUNT
+                await stream_send_queues[send_worker_index].put((session_id, binary_frame, result))
+        logging.debug(f"Worker {worker_id}: Processed frame {frame_id} for session {session_id}. Queue size: {queue.qsize()}")
+        queue.task_done()
+
+@app.on_event("startup")
+async def startup_event():
+    for worker_id, q in enumerate(worker_queues):
+        asyncio.create_task(worker_task(worker_id, q))
+    if not DIRECT_SEND_MODE:
+        for i in range(SEND_WORKER_COUNT):
+            asyncio.create_task(send_file_results_worker(i))
+            asyncio.create_task(send_stream_results_worker(i))
+
+# --------------------
+# 数据模型
+# --------------------
+class AnalyzeRequest(BaseModel):
+    session_id: str
+    object_str: str
+    filename: str
+
+class StreamRequest(BaseModel):
+    session_id: str
+    stream_url: str
+
+class StreamAnalyzeRequest(BaseModel):
+    session_id: str
+    object_str: str
+
+class StreamControlRequest(BaseModel):
+    session_id: str
+
+# --------------------
+# WebSocket 接口
+# --------------------
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    session_id = websocket.query_params.get("session_id")
+    if not session_id:
+        await websocket.close(code=1008)
+        return
+    await websocket.accept()
+    file_sessions[session_id] = websocket
+    logging.info(f"本地视频 WebSocket connected, session_id: {session_id}")
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            if msg == "ping":
+                continue
+    except Exception as e:
+        logging.error(f"WebSocket error (file) session {session_id}: {e}")
+    finally:
+        file_sessions.pop(session_id, None)
+
+@app.websocket("/ws/stream")
+async def websocket_stream(websocket: WebSocket):
+    session_id = websocket.query_params.get("session_id")
+    if not session_id:
+        await websocket.close(code=1008)
+        return
+    await websocket.accept()
+    stream_sessions[session_id] = websocket
+    logging.info(f"互联网流 WebSocket connected, session_id: {session_id}")
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            if msg == "ping":
+                continue
+    except Exception as e:
+        logging.error(f"WebSocket error (stream) session {session_id}: {e}")
+    finally:
+        stream_sessions.pop(session_id, None)
+
+# --------------------
+# 接口：上传视频（本地视频模式）
+# --------------------
+@app.post("/upload")
+async def upload_video(video: UploadFile = File(...)):
+    logging.info("视频上传，保存中...")
+    video_path = UPLOAD_DIR / video.filename
+    with open(video_path, "wb") as buffer:
+        shutil.copyfileobj(video.file, buffer)
+    return {"status": "success", "message": "视频上传成功", "filename": video.filename}
+
+# --------------------
+# 接口：本地视频分析
+# --------------------
+@app.post("/analyze")
+async def analyze_video(request: AnalyzeRequest):
+    session_id = request.session_id
+    object_str = request.object_str
+    filename = request.filename
+    logging.info(f"开始分析本地视频，session: {session_id}, 目标对象: {object_str}")
+    video_path = UPLOAD_DIR / filename
+    if not video_path.exists():
+        return {"status": "error", "message": "视频文件不存在"}
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        return {"status": "error", "message": "无法打开视频文件"}
+
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    if fps <= 0:
+        fps = ANALYSIS_FPS
+    frame_interval = max(1, fps // ANALYSIS_FPS)
+    logging.info(f"原始fps: {fps}, 目标fps: {ANALYSIS_FPS}")
+
+    frame_id, second = 0, 0
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        if frame_id % frame_interval == 0:
+            resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)))
+            _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
+            binary_frame = buffer.tobytes()
+            worker_index = hash(session_id) % WORKER_COUNT
+            await worker_queues[worker_index].put((session_id, frame_id, binary_frame, object_str, second, "file"))
+            logging.info(f"Frame {frame_id} added to worker {worker_index} queue for session {session_id}")
+        frame_id += 1
+        second = frame_id // fps
+    cap.release()
+    os.remove(video_path)
+    return {"status": "processing", "message": "视频分析中..."}
+
+# --------------------
+# 接口：启动互联网流拉流
+# --------------------
+@app.post("/stream")
+async def start_stream(request: StreamRequest, background_tasks: BackgroundTasks):
+    session_id = request.session_id
+    stream_url = request.stream_url
+    if not stream_url:
+        return {"status": "error", "message": "缺少流地址"}
+    logging.info(f"启动互联网流拉流，session: {session_id}, 流地址: {stream_url}")
+    stream_state[session_id] = "running"
+    background_tasks.add_task(stream_video_reader, session_id, stream_url)
+    return {"status": "success", "message": "互联网流拉流启动", "stream_url": stream_url}
+
+# --------------------
+# 接口：设置互联网流检测目标
+# --------------------
+@app.post("/stream/analyze")
+async def analyze_stream(request: StreamAnalyzeRequest):
+    session_id = request.session_id
+    object_str = request.object_str
+    if not object_str:
+        return {"status": "error", "message": "缺少检测对象"}
+    stream_detection[session_id] = object_str
+    logging.info(f"设置互联网流检测目标，session: {session_id}, 对象: {object_str}")
+    return {"status": "success", "message": "互联网流目标检测已启动", "object": object_str}
+
+# --------------------
+# 新增接口：暂停互联网流（同时清空该 session 队列数据）
+# --------------------
+@app.post("/stream/pause")
+async def pause_stream(request: StreamControlRequest):
+    session_id = request.session_id
+    if session_id not in stream_state:
+        return {"status": "error", "message": "无效的 session_id"}
+    stream_state[session_id] = "paused"
+    await clear_session_queues(session_id)
+    logging.info(f"暂停互联网流，并清空队列数据，session: {session_id}")
+    return {"status": "success", "message": "互联网流已暂停，队列数据已清空"}
+
+# --------------------
+# 新增接口：恢复互联网流（从暂停状态恢复，不清空队列数据）
+# --------------------
+@app.post("/stream/resume")
+async def resume_stream(request: StreamControlRequest):
+    session_id = request.session_id
+    if session_id not in stream_state:
+        return {"status": "error", "message": "无效的 session_id"}
+    stream_state[session_id] = "running"
+    logging.info(f"恢复互联网流，session: {session_id}")
+    return {"status": "success", "message": "互联网流已恢复"}
+
+# --------------------
+# 新增接口：停止互联网流（关闭拉流并清空队列数据）
+# --------------------
+@app.post("/stream/stop")
+async def stop_stream(request: StreamControlRequest):
+    session_id = request.session_id
+    if session_id not in stream_state:
+        return {"status": "error", "message": "无效的 session_id"}
+    stream_state[session_id] = "stopped"
+    await clear_session_queues(session_id)
+    logging.info(f"停止互联网流，并清空队列数据，session: {session_id}")
+    return {"status": "success", "message": "互联网流已停止，队列数据已清空"}
+
+# --------------------
+# 互联网流视频读取任务（支持 RTSP）
+# --------------------
+async def stream_video_reader(session_id: str, stream_url: str):
+    cap = cv2.VideoCapture(stream_url)
+    if not cap.isOpened():
+        logging.error(f"无法打开网络流: {stream_url}，session: {session_id}")
+        return
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        fps = ANALYSIS_FPS
+    frame_interval = max(1, int(fps // ANALYSIS_FPS))
+    frame_id = 0
+    logging.info(f"开始拉流，session: {session_id}，原始fps: {fps}, 目标fps: {ANALYSIS_FPS}")
+    while True:
+        current_state = stream_state.get(session_id, "running")
+        if current_state == "stopped":
+            logging.info(f"拉流停止，session: {session_id}")
+            break
+        ret, frame = cap.read()
+        if not ret:
+            logging.error(f"读取网络流帧失败，session: {session_id}，等待重试...")
+            await asyncio.sleep(0.1)
+            continue
+        if current_state == "paused":
+            frame_id += 1
+            await asyncio.sleep(0.01)
+            continue
+        if frame_id % frame_interval == 0:
+            resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)))
+            _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
+            binary_frame = buffer.tobytes()
+            second = frame_id // int(fps)
+            object_str = stream_detection.get(session_id, "")
+            worker_index = hash(session_id) % WORKER_COUNT
+            await worker_queues[worker_index].put((session_id, frame_id, binary_frame, object_str, second, "stream"))
+        frame_id += 1
+        await asyncio.sleep(0)
+    cap.release()
+
+# --------------------
+# 首页
+# --------------------
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+@app.get("/favicon.ico")
+async def favicon():
+    return {"message": "No favicon"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
