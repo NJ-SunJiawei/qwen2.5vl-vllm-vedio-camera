@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>Qwen2.5-VL AI智能识别</title>
+  <title>Qwen2.5-VL AI智能识别 - 多用户支持</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
   <style>
     body {
@@ -166,7 +166,17 @@
 </head>
 <body class="p-6">
   <div class="container">
-    <h1 class="text-3xl font-bold text-center mb-6">Qwen2.5-VL AI智能识别</h1>
+    <h1 class="text-3xl font-bold text-center mb-6">Qwen2.5-VL AI智能识别 - 多用户演示</h1>
+    
+    <!-- 使用 sessionStorage，每个标签页拥有独立 session_id -->
+    <script>
+      let session_id = sessionStorage.getItem("session_id");
+      if (!session_id) {
+        session_id = Date.now().toString(36) + Math.random().toString(36).substring(2);
+        sessionStorage.setItem("session_id", session_id);
+      }
+      console.log("session_id:", session_id);
+    </script>
     
     <!-- 标签切换 -->
     <div class="tab-buttons mb-4">
@@ -176,7 +186,6 @@
     
     <!-- 本地视频模式 -->
     <div id="sectionFile" class="section active">
-      <!-- 文件上传 -->
       <form id="fileUploadForm" class="mb-4">
         <input type="file" id="videoInput" accept="video/*" class="border p-2 rounded">
         <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded ml-2">上传视频</button>
@@ -185,12 +194,10 @@
           <span id="progressText">0%</span>
         </div>
       </form>
-      <!-- 检测对象输入（多个目标用逗号分隔） -->
       <div id="fileAnalyzeSection" class="mb-4 hidden">
         <input type="text" id="fileObjectInput" placeholder="输入要检测的对象（多个用逗号分隔）" class="border p-2 rounded">
         <button id="fileAnalyzeButton" class="bg-green-500 text-white px-4 py-2 rounded ml-2">开始识别</button>
       </div>
-      <!-- 视频播放与 FPS -->
       <div class="video-container mb-4" id="fileVideoContainer">
         <button id="fileFullScreenButton" class="fullscreen-btn">全屏</button>
         <div class="fps-display" id="fileFpsDisplay">FPS: 0</div>
@@ -199,7 +206,6 @@
           <canvas id="fileOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
         </div>
       </div>
-      <!-- 缩略图展示 -->
       <div class="thumbnail-container" id="fileThumbnailContainer"></div>
     </div>
     
@@ -210,7 +216,6 @@
         <input type="text" id="streamUrlInput" placeholder="请输入流地址" class="border p-2 rounded w-1/2 mr-2">
         <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">开始拉流</button>
       </form>
-      <!-- 视频播放与 FPS -->
       <div class="video-container mb-4" id="streamVideoContainer">
         <button id="streamFullScreenButton" class="fullscreen-btn">全屏</button>
         <div class="fps-display" id="streamFpsDisplay">FPS: 0</div>
@@ -219,11 +224,9 @@
           <canvas id="streamOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
         </div>
       </div>
-      <!-- 缩略图展示 -->
       <div class="thumbnail-container" id="streamThumbnailContainer"></div>
     </div>
     
-    <!-- 模态层，用于放大显示缩略图及左右导航 -->
     <div id="imageModal" class="hidden">
       <div id="modalPrev" class="modal-nav">&#9664;</div>
       <img id="modalImage" src="">
@@ -232,16 +235,14 @@
   </div>
   
   <script>
-    // 全局存储缩略图数据（分别针对本地视频和互联网流）
+    // 全局缩略图数据及尺寸记录
     let fileThumbnailList = [];
     let streamThumbnailList = [];
     let currentModalList = [];
     let currentModalIndex = 0;
-    // 记录原始尺寸（原始解码尺寸）
     let fileOriginalWidth = 0, fileOriginalHeight = 0;
     let streamOriginalWidth = 0, streamOriginalHeight = 0;
     
-    // 更新缩略图 DOM 中每个 img 的 dataset.index
     function updateThumbnailIndices(containerId) {
       const container = document.getElementById(containerId);
       Array.from(container.children).forEach((child, index) => {
@@ -278,10 +279,6 @@
     });
     
     // ---------------------------
-    // 公共检测显示时长（1.0秒）
-    const detectionDisplayDuration = 1000;
-    
-    // ---------------------------
     // 【本地视频模式】相关代码
     let fileLastDetection = null;
     let fileDetectionTimestamp = 0;
@@ -290,7 +287,6 @@
     let fileCurrentFPS = 0;
     let fileWs;
     
-    // 使用 createImageBitmap() 优化图像解码，同时记录原始尺寸
     function drawImageOnCanvas(blob, canvas, overlayCanvas, type) {
       createImageBitmap(blob).then(imgBitmap => {
         if(type === 'file' && fileOriginalWidth === 0){
@@ -300,7 +296,6 @@
           streamOriginalWidth = imgBitmap.width;
           streamOriginalHeight = imgBitmap.height;
         }
-        // 设置画布尺寸（保持原始分辨率）
         if(canvas.width !== imgBitmap.width || canvas.height !== imgBitmap.height){
           canvas.width = imgBitmap.width;
           canvas.height = imgBitmap.height;
@@ -312,12 +307,11 @@
       }).catch(err => console.error("createImageBitmap error:", err));
     }
     
+    // 初始化本地视频 WebSocket，并添加心跳与重连逻辑
     function initFileWebSocket() {
-      fileWs = new WebSocket(`ws://${window.location.host}/ws`);
+      fileWs = new WebSocket(`ws://${window.location.host}/ws?session_id=${session_id}`);
       fileWs.binaryType = "blob";
       fileWs.onopen = () => { console.log("本地视频 WebSocket 已连接"); };
-      fileWs.onerror = (err) => { console.error("本地视频 WebSocket 错误:", err); };
-      fileWs.onclose = () => { console.warn("本地视频 WebSocket 已关闭"); };
       fileWs.onmessage = async (event) => {
         if (event.data instanceof Blob) {
           const blob = event.data;
@@ -345,7 +339,6 @@
             if (data.bboxes && data.bboxes.length > 0) {
               fileLastDetection = data;
               fileDetectionTimestamp = Date.now();
-              // 延时100毫秒后生成缩略图，确保画布已更新
               setTimeout(addFileThumbnail, 100);
             }
           } catch (error) {
@@ -353,15 +346,25 @@
           }
         }
       };
+      fileWs.onerror = (err) => { console.error("本地视频 WebSocket 错误:", err); };
+      fileWs.onclose = () => {
+        console.warn("本地视频 WebSocket 已关闭，尝试重连...");
+        setTimeout(initFileWebSocket, 3000);
+      };
+      // 每隔 30 秒发送心跳 ping
+      setInterval(() => {
+        if (fileWs.readyState === WebSocket.OPEN) {
+          fileWs.send("ping");
+        }
+      }, 30000);
     }
     initFileWebSocket();
     
-    // 修改 overlay 绘制：采用 getBoundingClientRect() 获取显示尺寸
     function updateFileOverlay() {
       const fileOverlayCanvas = document.getElementById('fileOverlayCanvas');
       const ctx = fileOverlayCanvas.getContext('2d');
       ctx.clearRect(0, 0, fileOverlayCanvas.width, fileOverlayCanvas.height);
-      if (fileLastDetection && (Date.now() - fileDetectionTimestamp < detectionDisplayDuration) && fileOriginalWidth) {
+      if (fileLastDetection && (Date.now() - fileDetectionTimestamp < 1000) && fileOriginalWidth) {
         const rect = fileOverlayCanvas.getBoundingClientRect();
         const scaleX = rect.width / fileOriginalWidth;
         const scaleY = rect.height / fileOriginalHeight;
@@ -379,7 +382,6 @@
     }
     updateFileOverlay();
     
-    // 修复：将 dataset.index 设为当前 push 后的索引（length - 1），并在超出5个时更新剩余项的下标
     function addFileThumbnail() {
       const fileVideoCanvas = document.getElementById('fileVideoCanvas');
       if (fileVideoCanvas.width && fileVideoCanvas.height && fileLastDetection) {
@@ -407,7 +409,6 @@
         
         document.getElementById('fileThumbnailContainer').appendChild(thumbnailItem);
         
-        // 若超过5个，则移除最旧的一个，并更新下标
         while (fileThumbnailList.length > 5) {
           fileThumbnailList.shift();
           document.getElementById('fileThumbnailContainer').removeChild(
@@ -470,7 +471,7 @@
         const response = await fetch('/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ object_str: objectStr, filename: filename })
+          body: JSON.stringify({ session_id, object_str: objectStr, filename })
         });
         if (!response.ok) throw new Error("网络响应异常");
         console.log("本地视频识别已启动");
@@ -489,12 +490,11 @@
     let streamCurrentFPS = 0;
     let streamWs;
     
+    // 初始化互联网流 WebSocket，添加心跳及重连逻辑
     function initStreamWebSocket() {
-      streamWs = new WebSocket(`ws://${window.location.host}/ws/stream`);
+      streamWs = new WebSocket(`ws://${window.location.host}/ws/stream?session_id=${session_id}`);
       streamWs.binaryType = "blob";
       streamWs.onopen = () => { console.log("互联网流 WebSocket 已连接"); };
-      streamWs.onerror = (err) => { console.error("互联网流 WebSocket 错误:", err); };
-      streamWs.onclose = () => { console.warn("互联网流 WebSocket 已关闭"); };
       streamWs.onmessage = async (event) => {
         if (event.data instanceof Blob) {
           const blob = event.data;
@@ -518,14 +518,12 @@
           }
           try {
             const data = JSON.parse(jsonStr);
-            //console.log("互联网流接收到检测结果:", data);
             if (data.bboxes && data.bboxes.length > 0) {
               data.bboxes.forEach(item => {
-                 console.log("bbox:", item.bbox_2d, "label:", item.label);
-               });
+                  console.log("bbox:", item.bbox_2d, "label:", item.label);
+                });
               streamLastDetection = data;
               streamDetectionTimestamp = Date.now();
-              // 延时100毫秒后生成缩略图
               setTimeout(addStreamThumbnail, 100);
             }
           } catch (error) {
@@ -533,13 +531,23 @@
           }
         }
       };
+      streamWs.onerror = (err) => { console.error("互联网流 WebSocket 错误:", err); };
+      streamWs.onclose = () => {
+        console.warn("互联网流 WebSocket 已关闭，尝试重连...");
+        setTimeout(initStreamWebSocket, 3000);
+      };
+      setInterval(() => {
+        if (streamWs.readyState === WebSocket.OPEN) {
+          streamWs.send("ping");
+        }
+      }, 30000);
     }
     
     function updateStreamOverlay() {
       const streamOverlayCanvas = document.getElementById('streamOverlayCanvas');
       const ctx = streamOverlayCanvas.getContext('2d');
       ctx.clearRect(0, 0, streamOverlayCanvas.width, streamOverlayCanvas.height);
-      if (streamLastDetection && (Date.now() - streamDetectionTimestamp < detectionDisplayDuration) && streamOriginalWidth) {
+      if (streamLastDetection && (Date.now() - streamDetectionTimestamp < 1000) && streamOriginalWidth) {
         const rect = streamOverlayCanvas.getBoundingClientRect();
         const scaleX = rect.width / streamOriginalWidth;
         const scaleY = rect.height / streamOriginalHeight;
@@ -557,7 +565,6 @@
     }
     updateStreamOverlay();
     
-    // 同样修复：将 dataset.index 设为当前 push 后的索引，并更新下标
     function addStreamThumbnail() {
       const streamVideoCanvas = document.getElementById('streamVideoCanvas');
       if (streamVideoCanvas.width && streamVideoCanvas.height && streamLastDetection) {
@@ -585,7 +592,6 @@
         
         document.getElementById('streamThumbnailContainer').appendChild(thumbnailItem);
         
-        // 若超过5个，则移除最旧的一个，并更新下标
         while (streamThumbnailList.length > 5) {
           streamThumbnailList.shift();
           document.getElementById('streamThumbnailContainer').removeChild(
@@ -612,7 +618,7 @@
         const analyzeResponse = await fetch('/stream/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ object_str: objectStr })
+          body: JSON.stringify({ session_id, object_str: objectStr })
         });
         if (!analyzeResponse.ok) throw new Error("检测目标设置失败");
         console.log("检测目标设置成功");
@@ -620,7 +626,7 @@
         const streamResponse = await fetch('/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ stream_url: streamUrl })
+          body: JSON.stringify({ session_id, stream_url: streamUrl })
         });
         if (!streamResponse.ok) throw new Error("拉流启动失败");
         console.log("互联网流拉流启动成功");
@@ -682,10 +688,7 @@
       toggleFullScreen("streamVideoContainer");
     });
     
-    // 全屏后监听尺寸变化（可选：这里自动重绘）
-    document.addEventListener("fullscreenchange", () => {
-      // 可根据需要进行额外处理
-    });
+    document.addEventListener("fullscreenchange", () => {});
   </script>
 </body>
 </html>

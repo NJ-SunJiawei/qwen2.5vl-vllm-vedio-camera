@@ -25,7 +25,7 @@ templates = Jinja2Templates(directory="templates")
 WORKER_COUNT = 4             # 可配置的工作线程数量
 TARGET_FPS = 20              # 分析帧率
 FRAME_SKIP = 50              # 基础跳帧数
-TARGET_SEND_FPS = 15         # 发送帧率
+TARGET_SEND_FPS = 15         # 发送帧率（用于控制发送速度，保证前端平稳）
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -39,9 +39,13 @@ client = OpenAI(
 worker_queues = [asyncio.Queue() for _ in range(WORKER_COUNT)]
 thread_executor = ThreadPoolExecutor(max_workers=4)
 
+# 增加两个全局发送队列，用于缓存待发送的数据
+file_send_queue = asyncio.Queue()
+stream_send_queue = asyncio.Queue()
+
 # 多用户会话管理（session_id 映射到 WebSocket 连接）
-file_sessions = {}    # 本地视频
-stream_sessions = {}  # 互联网流
+file_sessions = {}    # 本地视频会话
+stream_sessions = {}  # 互联网流会话
 
 # 针对互联网流，每个 session 可能有不同的检测目标
 stream_detection = {}  # 键：session_id，值：检测目标字符串
@@ -95,17 +99,44 @@ def process_frame_wrapper(frame_np, object_str):
     future = thread_executor.submit(lambda: asyncio.run(analyze_frame(frame_np, object_str)))
     return future.result()
 
-async def send_result(session_id: str, mode: str, binary_frame: bytes, result: dict):
-    try:
-        if mode == "file":
+# --------------------
+# 发送任务（采用独立 worker 线程处理，通过队列缓存，并限制 FPS）
+# --------------------
+async def send_file_results():
+    interval = 1 / TARGET_SEND_FPS
+    while True:
+        start_time = time.time()
+        if not file_send_queue.empty():
+            session_id, binary_frame, result = await file_send_queue.get()
             ws = file_sessions.get(session_id)
-        else:
+            if ws:
+                try:
+                    await ws.send_bytes(binary_frame)
+                    await ws.send_json(result)
+                except Exception as e:
+                    print(f"Error sending file result for session {session_id}: {e}")
+            file_send_queue.task_done()
+        processing_time = time.time() - start_time
+        sleep_time = max(0, interval - processing_time)
+        await asyncio.sleep(sleep_time)
+
+async def send_stream_results():
+    interval = 1 / TARGET_SEND_FPS
+    while True:
+        start_time = time.time()
+        if not stream_send_queue.empty():
+            session_id, binary_frame, result = await stream_send_queue.get()
             ws = stream_sessions.get(session_id)
-        if ws:
-            await ws.send_bytes(binary_frame)
-            await ws.send_json(result)
-    except Exception as e:
-        print(f"Error sending result to session {session_id}: {e}")
+            if ws:
+                try:
+                    await ws.send_bytes(binary_frame)
+                    await ws.send_json(result)
+                except Exception as e:
+                    print(f"Error sending stream result for session {session_id}: {e}")
+            stream_send_queue.task_done()
+        processing_time = time.time() - start_time
+        sleep_time = max(0, interval - processing_time)
+        await asyncio.sleep(sleep_time)
 
 # --------------------
 # 工作线程任务（各 worker_queue 独立执行）
@@ -127,14 +158,23 @@ async def worker_task(worker_id: int, queue: asyncio.Queue):
                 result = {"bboxes": []}
         else:
             result = {"bboxes": []}
-        await send_result(session_id, mode, binary_frame, result)
+        # 将结果放入对应的发送队列，而不是直接发送
+        if mode == "file":
+            await file_send_queue.put((session_id, binary_frame, result))
+        else:
+            await stream_send_queue.put((session_id, binary_frame, result))
         print(f"Worker {worker_id}: Processed frame {frame_id} for session {session_id}. Queue size: {queue.qsize()}")
         queue.task_done()
 
+# --------------------
+# 启动任务：启动 worker 任务和发送任务
+# --------------------
 @app.on_event("startup")
 async def startup_event():
     for worker_id, q in enumerate(worker_queues):
         asyncio.create_task(worker_task(worker_id, q))
+    asyncio.create_task(send_file_results())
+    asyncio.create_task(send_stream_results())
 
 # --------------------
 # 数据模型
@@ -153,7 +193,7 @@ class StreamAnalyzeRequest(BaseModel):
     object_str: str
 
 # --------------------
-# WebSocket 接口（要求客户端在 URL 中传递 session_id 参数）
+# WebSocket 接口（要求客户端在 URL 中传递 session_id 参数，并增加心跳处理）
 # --------------------
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -167,7 +207,6 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             msg = await websocket.receive_text()
-            # 如果收到心跳 ping，则忽略或回复 pong
             if msg == "ping":
                 continue
     except Exception as e:
