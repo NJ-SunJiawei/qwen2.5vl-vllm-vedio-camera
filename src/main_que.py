@@ -22,7 +22,8 @@ templates = Jinja2Templates(directory="templates")
 # --------------------
 # 配置及全局变量
 # --------------------
-WORKER_COUNT = 4             # 可配置的工作线程数量
+WORKER_COUNT = 4             # 处理帧的工作线程数量
+SEND_WORKER_COUNT = 4        # 发送任务的工作线程数量
 TARGET_FPS = 20              # 分析帧率
 FRAME_SKIP = 50              # 基础跳帧数
 TARGET_SEND_FPS = 15         # 发送帧率（用于控制发送速度，保证前端平稳）
@@ -39,9 +40,9 @@ client = OpenAI(
 worker_queues = [asyncio.Queue() for _ in range(WORKER_COUNT)]
 thread_executor = ThreadPoolExecutor(max_workers=4)
 
-# 增加两个全局发送队列，用于缓存待发送的数据
-file_send_queue = asyncio.Queue()
-stream_send_queue = asyncio.Queue()
+# 修改：为发送任务采用多个队列，利用 hash 分发
+file_send_queues = [asyncio.Queue() for _ in range(SEND_WORKER_COUNT)]
+stream_send_queues = [asyncio.Queue() for _ in range(SEND_WORKER_COUNT)]
 
 # 多用户会话管理（session_id 映射到 WebSocket 连接）
 file_sessions = {}    # 本地视频会话
@@ -100,14 +101,14 @@ def process_frame_wrapper(frame_np, object_str):
     return future.result()
 
 # --------------------
-# 发送任务（采用独立 worker 线程处理，通过队列缓存，并限制 FPS）
+# 发送任务（采用多线程和 hash 分发，独立发送 worker 处理，通过队列缓存，并限制 FPS）
 # --------------------
-async def send_file_results():
+async def send_file_results_worker(worker_index: int):
     interval = 1 / TARGET_SEND_FPS
     while True:
         start_time = time.time()
-        if not file_send_queue.empty():
-            session_id, binary_frame, result = await file_send_queue.get()
+        if not file_send_queues[worker_index].empty():
+            session_id, binary_frame, result = await file_send_queues[worker_index].get()
             ws = file_sessions.get(session_id)
             if ws:
                 try:
@@ -115,17 +116,17 @@ async def send_file_results():
                     await ws.send_json(result)
                 except Exception as e:
                     print(f"Error sending file result for session {session_id}: {e}")
-            file_send_queue.task_done()
+            file_send_queues[worker_index].task_done()
         processing_time = time.time() - start_time
         sleep_time = max(0, interval - processing_time)
         await asyncio.sleep(sleep_time)
 
-async def send_stream_results():
+async def send_stream_results_worker(worker_index: int):
     interval = 1 / TARGET_SEND_FPS
     while True:
         start_time = time.time()
-        if not stream_send_queue.empty():
-            session_id, binary_frame, result = await stream_send_queue.get()
+        if not stream_send_queues[worker_index].empty():
+            session_id, binary_frame, result = await stream_send_queues[worker_index].get()
             ws = stream_sessions.get(session_id)
             if ws:
                 try:
@@ -133,7 +134,7 @@ async def send_stream_results():
                     await ws.send_json(result)
                 except Exception as e:
                     print(f"Error sending stream result for session {session_id}: {e}")
-            stream_send_queue.task_done()
+            stream_send_queues[worker_index].task_done()
         processing_time = time.time() - start_time
         sleep_time = max(0, interval - processing_time)
         await asyncio.sleep(sleep_time)
@@ -158,11 +159,13 @@ async def worker_task(worker_id: int, queue: asyncio.Queue):
                 result = {"bboxes": []}
         else:
             result = {"bboxes": []}
-        # 将结果放入对应的发送队列，而不是直接发送
+        # 使用 hash 分发，将结果放入对应的发送队列
         if mode == "file":
-            await file_send_queue.put((session_id, binary_frame, result))
+            send_worker_index = hash(session_id) % SEND_WORKER_COUNT
+            await file_send_queues[send_worker_index].put((session_id, binary_frame, result))
         else:
-            await stream_send_queue.put((session_id, binary_frame, result))
+            send_worker_index = hash(session_id) % SEND_WORKER_COUNT
+            await stream_send_queues[send_worker_index].put((session_id, binary_frame, result))
         print(f"Worker {worker_id}: Processed frame {frame_id} for session {session_id}. Queue size: {queue.qsize()}")
         queue.task_done()
 
@@ -173,8 +176,9 @@ async def worker_task(worker_id: int, queue: asyncio.Queue):
 async def startup_event():
     for worker_id, q in enumerate(worker_queues):
         asyncio.create_task(worker_task(worker_id, q))
-    asyncio.create_task(send_file_results())
-    asyncio.create_task(send_stream_results())
+    for i in range(SEND_WORKER_COUNT):
+        asyncio.create_task(send_file_results_worker(i))
+        asyncio.create_task(send_stream_results_worker(i))
 
 # --------------------
 # 数据模型
