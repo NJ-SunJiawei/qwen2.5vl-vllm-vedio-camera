@@ -508,6 +508,9 @@
             const data = JSON.parse(jsonStr);
             console.log("互联网流接收到检测结果:", data);
             if (data.bboxes && data.bboxes.length > 0) {
+              data.bboxes.forEach(item => {
+                 console.log("bbox:", item.bbox_2d, "label:", item.label);
+               });
               streamLastDetection = data;
               streamDetectionTimestamp = Date.now();
               // 延时100毫秒后生成缩略图
