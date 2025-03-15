@@ -8,6 +8,7 @@ import shutil
 import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+import threading
 
 from fastapi import FastAPI, WebSocket, UploadFile, File, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse
@@ -38,9 +39,10 @@ client = OpenAI(
 
 # 全局工作队列，每个工作线程对应一个 asyncio.Queue
 worker_queues = [asyncio.Queue() for _ in range(WORKER_COUNT)]
-thread_executor = ThreadPoolExecutor(max_workers=4)
+# 增加线程池的最大线程数，便于处理更多并发任务
+thread_executor = ThreadPoolExecutor(max_workers=10)
 
-# 修改：为发送任务采用多个队列，利用 hash 分发
+# 为发送任务采用多个队列，利用 hash 分发
 file_send_queues = [asyncio.Queue() for _ in range(SEND_WORKER_COUNT)]
 stream_send_queues = [asyncio.Queue() for _ in range(SEND_WORKER_COUNT)]
 
@@ -50,6 +52,9 @@ stream_sessions = {}  # 互联网流会话
 
 # 针对互联网流，每个 session 可能有不同的检测目标
 stream_detection = {}  # 键：session_id，值：检测目标字符串
+
+# 为防止并发调用 OpenAI API 导致连接错误，增加全局信号量，限制同时并发调用数量
+analysis_semaphore = threading.Semaphore(10)
 
 # --------------------
 # 公共函数
@@ -94,11 +99,21 @@ async def analyze_frame(frame_np: bytes, object_str: str):
             return {"bboxes": []}
     except Exception as e:
         print(f"Error during analysis: {e}")
-        return {"bboxes": []}
+        raise
 
 def process_frame_wrapper(frame_np, object_str):
-    future = thread_executor.submit(lambda: asyncio.run(analyze_frame(frame_np, object_str)))
-    return future.result()
+    # 增加重试机制，最多重试 2 次
+    for attempt in range(2):
+        try:
+            # 限制并发调用 API
+            with analysis_semaphore:
+                future = thread_executor.submit(lambda: asyncio.run(analyze_frame(frame_np, object_str)))
+                return future.result()
+        except Exception as e:
+            print(f"Attempt {attempt+1} failed: {e}")
+            time.sleep(1)
+    # 重试失败后返回空检测结果
+    return {"bboxes": []}
 
 # --------------------
 # 发送任务（采用多线程和 hash 分发，独立发送 worker 处理，通过队列缓存，并限制 FPS）
@@ -343,7 +358,7 @@ async def stream_video_reader(session_id: str, stream_url: str):
             worker_index = hash(session_id) % WORKER_COUNT
             await worker_queues[worker_index].put((session_id, frame_id, binary_frame, object_str, second, "stream"))
         frame_id += 1
-        await asyncio.sleep(0) #让出控制权
+        await asyncio.sleep(0)
     cap.release()
 
 # --------------------
