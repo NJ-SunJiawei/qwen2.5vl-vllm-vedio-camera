@@ -241,6 +241,17 @@
     let fileOriginalWidth = 0, fileOriginalHeight = 0;
     let streamOriginalWidth = 0, streamOriginalHeight = 0;
     
+    // 更新缩略图 DOM 中每个 img 的 dataset.index
+    function updateThumbnailIndices(containerId) {
+      const container = document.getElementById(containerId);
+      Array.from(container.children).forEach((child, index) => {
+        const img = child.querySelector('img');
+        if (img) {
+          img.dataset.index = index;
+        }
+      });
+    }
+    
     // ---------------------------
     // 标签切换逻辑
     const tabFile = document.getElementById('tabFile');
@@ -368,7 +379,7 @@
     }
     updateFileOverlay();
     
-    // 修复：将 dataset.index 设为当前 push 后的索引（length - 1）
+    // 修复：将 dataset.index 设为当前 push 后的索引（length - 1），并在超出5个时更新剩余项的下标
     function addFileThumbnail() {
       const fileVideoCanvas = document.getElementById('fileVideoCanvas');
       if (fileVideoCanvas.width && fileVideoCanvas.height && fileLastDetection) {
@@ -396,13 +407,14 @@
         
         document.getElementById('fileThumbnailContainer').appendChild(thumbnailItem);
         
-        // 若超过5个，则移除最旧的一个
+        // 若超过5个，则移除最旧的一个，并更新下标
         while (fileThumbnailList.length > 5) {
           fileThumbnailList.shift();
           document.getElementById('fileThumbnailContainer').removeChild(
             document.getElementById('fileThumbnailContainer').firstChild
           );
         }
+        updateThumbnailIndices('fileThumbnailContainer');
       }
     }
     
@@ -545,7 +557,7 @@
     }
     updateStreamOverlay();
     
-    // 同样修复：将 dataset.index 设为当前 push 后的索引（length - 1）
+    // 同样修复：将 dataset.index 设为当前 push 后的索引，并更新下标
     function addStreamThumbnail() {
       const streamVideoCanvas = document.getElementById('streamVideoCanvas');
       if (streamVideoCanvas.width && streamVideoCanvas.height && streamLastDetection) {
@@ -573,13 +585,14 @@
         
         document.getElementById('streamThumbnailContainer').appendChild(thumbnailItem);
         
-        // 若超过5个，则移除最旧的一个
+        // 若超过5个，则移除最旧的一个，并更新下标
         while (streamThumbnailList.length > 5) {
           streamThumbnailList.shift();
           document.getElementById('streamThumbnailContainer').removeChild(
             document.getElementById('streamThumbnailContainer').firstChild
           );
         }
+        updateThumbnailIndices('streamThumbnailContainer');
       }
     }
     
