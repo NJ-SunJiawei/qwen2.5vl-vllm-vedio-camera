@@ -45,7 +45,7 @@
       background-color: #000;
       position: relative;
       width: 100%;
-      max-height: 80vh;
+      height: 400px; /* 固定高度，避免播放区占比过大 */
       border: 1px solid #ddd;
       overflow: hidden;
       display: flex;
@@ -86,7 +86,7 @@
     }
     /* 缩略图 */
     .thumbnail-container {
-      margin-top: 1rem;
+      margin-top: 1.5rem; /* 加大间距预留缩略图显示区域 */
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
@@ -172,7 +172,6 @@
     #modalNext {
       right: 20px;
     }
-    
     /* 全屏时调整样式，避免黑边 */
     :fullscreen .video-container,
     :-webkit-full-screen .video-container {
@@ -242,9 +241,10 @@
       
       <!-- 互联网流模式 -->
       <section id="sectionStream" class="content-section">
-        <form id="streamCombinedForm" class="mb-4">
-          <input type="text" id="streamObjectInput" placeholder="请输入检测对象（多个用逗号分隔）" class="border p-2 rounded mr-2">
-          <input type="text" id="streamUrlInput" placeholder="请输入流地址" class="border p-2 rounded w-1/2 mr-2">
+        <!-- 修改为竖向排列，输入框全宽 -->
+        <form id="streamCombinedForm" class="mb-4 flex flex-col gap-2">
+          <input type="text" id="streamObjectInput" placeholder="请输入检测对象（多个用逗号分隔）" class="border p-2 rounded w-full">
+          <input type="text" id="streamUrlInput" placeholder="请输入流地址" class="border p-2 rounded w-full">
           <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">开始拉流</button>
         </form>
         <div id="streamControlButtons" class="mb-4">
