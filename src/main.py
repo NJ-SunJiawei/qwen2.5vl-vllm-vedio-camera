@@ -37,8 +37,8 @@ DIRECT_SEND_MODE = False
 # --------------------
 # 配置及全局变量
 # --------------------
-WORKER_COUNT = 4             # 处理帧的工作线程数量
-SEND_WORKER_COUNT = 4        # 发送任务的工作线程数量（仅在 DIRECT_SEND_MODE=False 时使用）
+WORKER_COUNT = 8             # 处理帧的工作线程数量
+SEND_WORKER_COUNT = 8        # 发送任务的工作线程数量（仅在 DIRECT_SEND_MODE=False 时使用）
 OPENAI_WORKER_COUNT = 10     # 调用大模型线程池数量
 TARGET_FPS = 50              # 发送帧率（用于限制发送速度,暂时处理效率跟不上无效）
 ANALYSIS_FPS = 20            # 分析帧率（用于降低原始帧）
@@ -225,10 +225,10 @@ async def worker_task(worker_id: int, queue: asyncio.Queue):
             await send_result_direct(session_id, binary_frame, result, mode)
         else:
             if mode == "file":
-                send_worker_index = hash(session_id) % SEND_WORKER_COUNT
+                send_worker_index = (abs(hash(session_id)) % SEND_WORKER_COUNT)
                 await file_send_queues[send_worker_index].put((session_id, binary_frame, result))
             else:
-                send_worker_index = hash(session_id) % SEND_WORKER_COUNT
+                send_worker_index = (abs(hash(session_id)) % SEND_WORKER_COUNT)
                 await stream_send_queues[send_worker_index].put((session_id, binary_frame, result))
         logging.debug(f"Worker {worker_id}: Processed frame {frame_id} for session {session_id}. Queue size: {queue.qsize()}")
         queue.task_done()
@@ -344,7 +344,7 @@ async def analyze_video(request: AnalyzeRequest):
             resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)))
             _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
             binary_frame = buffer.tobytes()
-            worker_index = hash(session_id) % WORKER_COUNT
+            worker_index = (abs(hash(session_id)) % WORKER_COUNT)
             await worker_queues[worker_index].put((session_id, frame_id, binary_frame, object_str, second, "file"))
             logging.info(f"Frame {frame_id} added to worker {worker_index} queue for session {session_id}")
         frame_id += 1
@@ -422,16 +422,29 @@ async def stop_stream(request: StreamControlRequest):
 # 互联网流视频读取任务（支持 RTSP）
 # --------------------
 async def stream_video_reader(session_id: str, stream_url: str):
-    cap = cv2.VideoCapture(stream_url)
+    loop = asyncio.get_running_loop()
+
+    try:
+        # 使用异步超时控制
+        cap = await asyncio.wait_for(
+            loop.run_in_executor(None, cv2.VideoCapture, stream_url),
+            timeout=5  # 5秒超时
+        )
+    except asyncio.TimeoutError:
+        logging.error(f"打开网络流超时: {stream_url}，session: {session_id}")
+        return
+
     if not cap.isOpened():
         logging.error(f"无法打开网络流: {stream_url}，session: {session_id}")
         return
-    fps = cap.get(cv2.CAP_PROP_FPS)
+    
+    fps = await loop.run_in_executor(None, cap.get, cv2.CAP_PROP_FPS)
     if fps <= 0:
         fps = ANALYSIS_FPS
     frame_interval = max(1, int(fps // ANALYSIS_FPS))
     frame_id = 0
     logging.info(f"开始拉流，session: {session_id}，原始fps: {fps}, 目标fps: {ANALYSIS_FPS}")
+
     while True:
         current_state = stream_state.get(session_id, "running")
         if current_state == "stopped":
@@ -454,7 +467,7 @@ async def stream_video_reader(session_id: str, stream_url: str):
             binary_frame = buffer.tobytes()
             second = frame_id // int(fps)
             object_str = stream_detection.get(session_id, "")
-            worker_index = hash(session_id) % WORKER_COUNT
+            worker_index = (abs(hash(session_id)) % WORKER_COUNT)
             await worker_queues[worker_index].put((session_id, frame_id, binary_frame, object_str, second, "stream"))
         frame_id += 1
         await asyncio.sleep(0)
