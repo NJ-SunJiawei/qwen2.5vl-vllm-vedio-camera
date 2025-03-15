@@ -216,6 +216,12 @@
         <input type="text" id="streamUrlInput" placeholder="请输入流地址" class="border p-2 rounded w-1/2 mr-2">
         <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">开始拉流</button>
       </form>
+      <!-- 新增：控制互联网流的按钮 -->
+      <div id="streamControlButtons" class="mb-4">
+        <button id="pauseStreamButton" class="bg-yellow-500 text-white px-4 py-2 rounded mr-2">暂停流</button>
+        <button id="resumeStreamButton" class="bg-green-500 text-white px-4 py-2 rounded mr-2">恢复流</button>
+        <button id="stopStreamButton" class="bg-red-500 text-white px-4 py-2 rounded">停止流</button>
+      </div>
       <div class="video-container mb-4" id="streamVideoContainer">
         <button id="streamFullScreenButton" class="fullscreen-btn">全屏</button>
         <div class="fps-display" id="streamFpsDisplay">FPS: 0</div>
@@ -335,7 +341,6 @@
           }
           try {
             const data = JSON.parse(jsonStr);
-            //console.log("本地视频接收到检测结果:", data);
             if (data.bboxes && data.bboxes.length > 0) {
               data.bboxes.forEach(item => {
                   console.log("bbox:", item.bbox_2d, "label:", item.label);
@@ -412,7 +417,7 @@
         
         document.getElementById('fileThumbnailContainer').appendChild(thumbnailItem);
         
-        while (fileThumbnailList.length > 5) {
+        while (fileThumbnailList.length > 6) {
           fileThumbnailList.shift();
           document.getElementById('fileThumbnailContainer').removeChild(
             document.getElementById('fileThumbnailContainer').firstChild
@@ -595,7 +600,7 @@
         
         document.getElementById('streamThumbnailContainer').appendChild(thumbnailItem);
         
-        while (streamThumbnailList.length > 5) {
+        while (streamThumbnailList.length > 6) {
           streamThumbnailList.shift();
           document.getElementById('streamThumbnailContainer').removeChild(
             document.getElementById('streamThumbnailContainer').firstChild
@@ -637,6 +642,49 @@
       } catch (error) {
         console.error("启动互联网流错误:", error);
         alert("启动互联网流失败，请重试");
+      }
+    });
+    
+    // 新增：暂停、恢复、停止互联网流按钮事件
+    document.getElementById('pauseStreamButton').addEventListener('click', async () => {
+      try {
+        const response = await fetch('/stream/pause', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id })
+        });
+        const result = await response.json();
+        console.log("暂停流结果:", result);
+      } catch (error) {
+        console.error("暂停流错误:", error);
+      }
+    });
+    
+    document.getElementById('resumeStreamButton').addEventListener('click', async () => {
+      try {
+        const response = await fetch('/stream/resume', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id })
+        });
+        const result = await response.json();
+        console.log("恢复流结果:", result);
+      } catch (error) {
+        console.error("恢复流错误:", error);
+      }
+    });
+    
+    document.getElementById('stopStreamButton').addEventListener('click', async () => {
+      try {
+        const response = await fetch('/stream/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id })
+        });
+        const result = await response.json();
+        console.log("停止流结果:", result);
+      } catch (error) {
+        console.error("停止流错误:", error);
       }
     });
     

@@ -39,9 +39,9 @@ DIRECT_SEND_MODE = False
 WORKER_COUNT = 4             # 处理帧的工作线程数量
 SEND_WORKER_COUNT = 4        # 发送任务的工作线程数量（仅在 DIRECT_SEND_MODE=False 时使用）
 OPENAI_WORKER_COUNT = 10     # 调用大模型线程池数量
-TARGET_FPS = 50              # 发送帧率（用于限制发送速度）
+TARGET_FPS = 50              # 发送帧率（用于限制发送速度,暂时处理效率跟不上无效）
 ANALYSIS_FPS = 20            # 分析帧率（用于降低原始帧）
-FRAME_SKIP = 200             # 基础跳帧数（用于检测抽帧）
+FRAME_SKIP = 500             # 基础跳帧数（用于检测抽帧）
 
 client = OpenAI(
     base_url="http://124.220.202.52:8000/v1",
@@ -67,6 +67,9 @@ stream_sessions = {}  # 互联网流会话
 
 # 针对互联网流，每个 session 可能有不同的检测目标
 stream_detection = {}  # 键：session_id，值：检测目标字符串
+
+# 新增：为每个互联网流会话设置状态，状态可为 "running"、"paused"、"stopped"
+stream_state = {}      # 键：session_id，值：状态字符串
 
 # 为防止并发调用 OpenAI API 导致连接错误，增加全局信号量，限制同时并发调用数量
 analysis_semaphore = threading.Semaphore(5)
@@ -257,6 +260,10 @@ class StreamAnalyzeRequest(BaseModel):
     session_id: str
     object_str: str
 
+# 新增：控制互联网流状态请求模型
+class StreamControlRequest(BaseModel):
+    session_id: str
+
 # --------------------
 # WebSocket 接口（要求客户端在 URL 中传递 session_id 参数，并增加心跳处理）
 # --------------------
@@ -359,6 +366,8 @@ async def start_stream(request: StreamRequest, background_tasks: BackgroundTasks
     if not stream_url:
         return {"status": "error", "message": "缺少流地址"}
     logging.info(f"启动互联网流拉流，session: {session_id}, 流地址: {stream_url}")
+    # 初始化状态为 running
+    stream_state[session_id] = "running"
     background_tasks.add_task(stream_video_reader, session_id, stream_url)
     return {"status": "success", "message": "互联网流拉流启动", "stream_url": stream_url}
 
@@ -376,6 +385,42 @@ async def analyze_stream(request: StreamAnalyzeRequest):
     return {"status": "success", "message": "互联网流目标检测已启动", "object": object_str}
 
 # --------------------
+# 新增接口：暂停互联网流
+# --------------------
+@app.post("/stream/pause")
+async def pause_stream(request: StreamControlRequest):
+    session_id = request.session_id
+    if session_id not in stream_state:
+        return {"status": "error", "message": "无效的 session_id"}
+    stream_state[session_id] = "paused"
+    logging.info(f"暂停互联网流，session: {session_id}")
+    return {"status": "success", "message": "互联网流已暂停"}
+
+# --------------------
+# 新增接口：恢复互联网流（从暂停状态恢复）
+# --------------------
+@app.post("/stream/resume")
+async def resume_stream(request: StreamControlRequest):
+    session_id = request.session_id
+    if session_id not in stream_state:
+        return {"status": "error", "message": "无效的 session_id"}
+    stream_state[session_id] = "running"
+    logging.info(f"恢复互联网流，session: {session_id}")
+    return {"status": "success", "message": "互联网流已恢复"}
+
+# --------------------
+# 新增接口：停止互联网流（关闭拉流）
+# --------------------
+@app.post("/stream/stop")
+async def stop_stream(request: StreamControlRequest):
+    session_id = request.session_id
+    if session_id not in stream_state:
+        return {"status": "error", "message": "无效的 session_id"}
+    stream_state[session_id] = "stopped"
+    logging.info(f"停止互联网流，session: {session_id}")
+    return {"status": "success", "message": "互联网流已停止"}
+
+# --------------------
 # 互联网流视频读取任务（支持 RTSP），每个 session 独立拉流
 # --------------------
 async def stream_video_reader(session_id: str, stream_url: str):
@@ -390,11 +435,23 @@ async def stream_video_reader(session_id: str, stream_url: str):
     frame_id = 0
     logging.info(f"开始拉流，session: {session_id}，原始fps: {fps}, 目标fps: {ANALYSIS_FPS}")
     while True:
+        # 检查当前状态
+        current_state = stream_state.get(session_id, "running")
+        if current_state == "stopped":
+            logging.info(f"拉流停止，session: {session_id}")
+            break
         ret, frame = cap.read()
         if not ret:
             logging.error(f"读取网络流帧失败，session: {session_id}，等待重试...")
             await asyncio.sleep(0.1)
             continue
+
+        if current_state == "paused":
+            # 暂停状态下丢弃帧，不加入处理队列
+            frame_id += 1
+            await asyncio.sleep(0.01)
+            continue
+
         if frame_id % frame_interval == 0:
             resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)))
             _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
