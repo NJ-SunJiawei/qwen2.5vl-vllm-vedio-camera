@@ -423,17 +423,21 @@ async def stop_stream(request: StreamControlRequest):
 # --------------------
 async def stream_video_reader(session_id: str, stream_url: str):
     loop = asyncio.get_running_loop()
-
+    
     try:
-        # 使用异步超时控制
-        cap = await asyncio.wait_for(
-            loop.run_in_executor(None, cv2.VideoCapture, stream_url),
-            timeout=5  # 5秒超时
-        )
-    except asyncio.TimeoutError:
-        logging.error(f"打开网络流超时: {stream_url}，session: {session_id}")
+        # 方法 1：尝试设置 OpenCV 超时属性
+        cap = await loop.run_in_executor(None, cv2.VideoCapture, stream_url)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)  # 5秒超时
+        
+        # 方法 2：异步超时备选方案
+        # cap = await asyncio.wait_for(
+        #     loop.run_in_executor(None, cv2.VideoCapture, stream_url),
+        #     timeout=5
+        # )
+    except (asyncio.TimeoutError, cv2.error) as e:
+        logging.error(f"打开网络流失败: {stream_url}, session: {session_id}, 错误: {e}")
         return
-
+    
     if not cap.isOpened():
         logging.error(f"无法打开网络流: {stream_url}，session: {session_id}")
         return
