@@ -32,8 +32,7 @@ templates = Jinja2Templates(directory="templates")
 # --------------------
 # True：在 worker 中直接发送结果（send_result 限制 FPS，不通过独立发送队列）
 # False：使用原先的发送队列模式，通过独立的发送任务完成发送
-DIRECT_SEND_MODE = True
-
+DIRECT_SEND_MODE = False
 # --------------------
 # 配置及全局变量
 # --------------------
