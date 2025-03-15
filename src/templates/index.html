@@ -2,172 +2,35 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>Qwen2.5-VL AI智能识别 - 多用户支持</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
+  <title>Qwen2.5-VL AI智能识别 - 多用户演示</title>
+  <!-- 使用最新版本的 TailwindCSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>
+    /* 自定义全局样式，配合 Tailwind 工具类 */
     body {
-      background: linear-gradient(135deg, #ece9e6, #ffffff);
+      background-color: #f4f7f8;
       font-family: 'Helvetica Neue', Arial, sans-serif;
     }
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 20px;
+    /* 自定义滚动条 */
+    ::-webkit-scrollbar {
+      width: 8px;
     }
-    .tab-buttons button {
-      padding: 10px 20px;
-      margin-right: 10px;
-      border: none;
-      cursor: pointer;
+    ::-webkit-scrollbar-track {
+      background: #f1f1f1;
     }
-    .active-tab {
-      background-color: #3b82f6;
-      color: white;
-    }
-    .inactive-tab {
-      background-color: #e5e7eb;
-      color: #333;
-    }
-    .section {
-      display: none;
-    }
-    .section.active {
-      display: block;
-    }
-    .video-container {
-      background-color: black;
-      position: relative;
-      width: 100%;
-      max-height: 80vh;
-      border: 1px solid #ddd;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      overflow: hidden;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    .canvas-wrapper {
-      position: relative;
-      display: inline-block;
-    }
-    canvas {
-      display: block;
-      width: 100%;
-      height: auto;
-    }
-    .fps-display {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: rgba(0,0,0,0.6);
-      color: #fff;
-      padding: 4px 8px;
+    ::-webkit-scrollbar-thumb {
+      background: #c1c1c1;
       border-radius: 4px;
-      font-size: 14px;
-      z-index: 10;
     }
-    .fullscreen-btn {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(0,0,0,0.6);
-      color: #fff;
-      border: none;
-      padding: 6px 10px;
-      border-radius: 4px;
-      cursor: pointer;
-      z-index: 11;
-    }
-    .thumbnail-container {
-      margin-top: 10px;
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .thumbnail-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      padding: 4px;
-    }
-    .thumbnail-item img {
-      width: 80px;
-      height: auto;
-      cursor: pointer;
-    }
-    .thumbnail-label {
-      margin-top: 4px;
-      font-size: 12px;
-      color: #333;
-      text-align: center;
-      word-break: break-all;
-    }
-    #progressContainer {
-      width: 100%;
-      background: #e5e7eb;
-      border-radius: 8px;
-      overflow: hidden;
-      margin-top: 10px;
-      position: relative;
-      height: 20px;
-    }
-    #progressBar {
-      height: 100%;
-      width: 0%;
-      background: #3b82f6;
-      transition: width 0.2s;
-    }
-    #progressText {
-      position: absolute;
-      top: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      line-height: 20px;
-      font-size: 14px;
-      color: #333;
-    }
-    #imageModal {
-      position: fixed;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(0, 0, 0, 0.75);
-      z-index: 50;
-    }
-    #imageModal.hidden {
-      display: none;
-    }
-    #modalImage {
-      max-width: 90%;
-      max-height: 90%;
-      border: 4px solid #fff;
-      border-radius: 8px;
-    }
-    .modal-nav {
-      position: absolute;
-      top: 50%;
-      transform: translateY(-50%);
-      font-size: 2rem;
-      color: #fff;
-      cursor: pointer;
-      user-select: none;
-      padding: 0 10px;
-    }
-    #modalPrev {
-      left: 20px;
-    }
-    #modalNext {
-      right: 20px;
+    ::-webkit-scrollbar-thumb:hover {
+      background: #a8a8a8;
     }
   </style>
 </head>
 <body class="p-6">
-  <div class="container">
-    <h1 class="text-3xl font-bold text-center mb-6">Qwen2.5-VL AI智能识别 - 多用户演示</h1>
-    
+  <div class="max-w-5xl mx-auto">
+    <h1 class="text-4xl font-bold text-center text-gray-800 mb-8">Qwen2.5-VL AI智能识别 - 多用户演示</h1>
+
     <!-- 使用 sessionStorage，每个标签页拥有独立 session_id -->
     <script>
       let session_id = sessionStorage.getItem("session_id");
@@ -177,69 +40,71 @@
       }
       console.log("session_id:", session_id);
     </script>
-    
+
     <!-- 标签切换 -->
-    <div class="tab-buttons mb-4">
-      <button id="tabFile" class="active-tab">本地视频</button>
-      <button id="tabStream" class="inactive-tab">互联网流</button>
+    <div class="flex justify-center mb-6 space-x-4">
+      <button id="tabFile" class="px-4 py-2 rounded bg-blue-500 text-white shadow hover:bg-blue-600 focus:outline-none">本地视频</button>
+      <button id="tabStream" class="px-4 py-2 rounded bg-gray-200 text-gray-800 shadow hover:bg-gray-300 focus:outline-none">互联网流</button>
     </div>
-    
+
     <!-- 本地视频模式 -->
-    <div id="sectionFile" class="section active">
-      <form id="fileUploadForm" class="mb-4">
-        <input type="file" id="videoInput" accept="video/*" class="border p-2 rounded">
-        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded ml-2">上传视频</button>
-        <div id="progressContainer">
-          <div id="progressBar"></div>
-          <span id="progressText">0%</span>
-        </div>
+    <div id="sectionFile" class="space-y-6">
+      <form id="fileUploadForm" class="flex flex-col md:flex-row items-center gap-4">
+        <input type="file" id="videoInput" accept="video/*" class="border border-gray-300 rounded p-2 w-full md:w-auto">
+        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded shadow hover:bg-blue-600">上传视频</button>
       </form>
-      <div id="fileAnalyzeSection" class="mb-4 hidden">
-        <input type="text" id="fileObjectInput" placeholder="输入要检测的对象（多个用逗号分隔）" class="border p-2 rounded">
-        <button id="fileAnalyzeButton" class="bg-green-500 text-white px-4 py-2 rounded ml-2">开始识别</button>
+      <div id="progressContainer" class="w-full bg-gray-200 rounded h-4 overflow-hidden">
+        <div id="progressBar" class="h-full bg-blue-500" style="width:0%"></div>
       </div>
-      <div class="video-container mb-4" id="fileVideoContainer">
-        <button id="fileFullScreenButton" class="fullscreen-btn">全屏</button>
-        <div class="fps-display" id="fileFpsDisplay">FPS: 0</div>
-        <div class="canvas-wrapper">
-          <canvas id="fileVideoCanvas"></canvas>
-          <canvas id="fileOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+      <span id="progressText" class="block text-center text-gray-600">0%</span>
+      <div id="fileAnalyzeSection" class="mt-4 hidden flex items-center gap-4">
+        <input type="text" id="fileObjectInput" placeholder="输入要检测的对象（多个用逗号分隔）" class="border border-gray-300 rounded p-2 flex-1">
+        <button id="fileAnalyzeButton" class="bg-green-500 text-white px-4 py-2 rounded shadow hover:bg-green-600" data-filename="">开始识别</button>
+      </div>
+      <div class="relative bg-black rounded shadow overflow-hidden" id="fileVideoContainer">
+        <button id="fileFullScreenButton" class="absolute top-3 right-3 bg-gray-700 bg-opacity-70 text-white px-2 py-1 rounded hover:bg-opacity-90 focus:outline-none z-10">全屏</button>
+        <div class="absolute top-3 left-3 bg-gray-700 bg-opacity-70 text-white px-2 py-1 rounded text-sm z-10" id="fileFpsDisplay">FPS: 0</div>
+        <div class="relative">
+          <canvas id="fileVideoCanvas" class="block w-full"></canvas>
+          <canvas id="fileOverlayCanvas" class="absolute inset-0 pointer-events-none"></canvas>
         </div>
       </div>
-      <div class="thumbnail-container" id="fileThumbnailContainer"></div>
+      <div class="flex flex-wrap gap-4 mt-4" id="fileThumbnailContainer"></div>
     </div>
-    
+
     <!-- 互联网流模式 -->
-    <div id="sectionStream" class="section">
-      <form id="streamCombinedForm" class="mb-4">
-        <input type="text" id="streamObjectInput" placeholder="请输入检测对象（多个用逗号分隔）" class="border p-2 rounded mr-2">
-        <input type="text" id="streamUrlInput" placeholder="请输入流地址" class="border p-2 rounded w-1/2 mr-2">
-        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">开始拉流</button>
+    <div id="sectionStream" class="hidden space-y-6">
+      <form id="streamCombinedForm" class="flex flex-col md:flex-row items-center gap-4">
+        <input type="text" id="streamObjectInput" placeholder="请输入检测对象（多个用逗号分隔）" class="border border-gray-300 rounded p-2 flex-1">
+        <input type="text" id="streamUrlInput" placeholder="请输入流地址" class="border border-gray-300 rounded p-2 flex-1">
+        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded shadow hover:bg-blue-600">开始拉流</button>
       </form>
-      <!-- 新增：控制互联网流的按钮 -->
-      <div id="streamControlButtons" class="mb-4">
-        <button id="pauseStreamButton" class="bg-yellow-500 text-white px-4 py-2 rounded mr-2">暂停流</button>
-        <button id="resumeStreamButton" class="bg-green-500 text-white px-4 py-2 rounded mr-2">恢复流</button>
-        <button id="stopStreamButton" class="bg-red-500 text-white px-4 py-2 rounded">停止流</button>
+      <div class="flex gap-4">
+        <button id="pauseStreamButton" class="bg-yellow-500 text-white px-4 py-2 rounded shadow hover:bg-yellow-600 focus:outline-none">暂停流</button>
+        <button id="resumeStreamButton" class="bg-green-500 text-white px-4 py-2 rounded shadow hover:bg-green-600 focus:outline-none">恢复流</button>
+        <button id="stopStreamButton" class="bg-red-500 text-white px-4 py-2 rounded shadow hover:bg-red-600 focus:outline-none">停止流</button>
       </div>
-      <div class="video-container mb-4" id="streamVideoContainer">
-        <button id="streamFullScreenButton" class="fullscreen-btn">全屏</button>
-        <div class="fps-display" id="streamFpsDisplay">FPS: 0</div>
-        <div class="canvas-wrapper">
-          <canvas id="streamVideoCanvas"></canvas>
-          <canvas id="streamOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+      <div class="relative bg-black rounded shadow overflow-hidden" id="streamVideoContainer">
+        <button id="streamFullScreenButton" class="absolute top-3 right-3 bg-gray-700 bg-opacity-70 text-white px-2 py-1 rounded hover:bg-opacity-90 focus:outline-none z-10">全屏</button>
+        <div class="absolute top-3 left-3 bg-gray-700 bg-opacity-70 text-white px-2 py-1 rounded text-sm z-10" id="streamFpsDisplay">FPS: 0</div>
+        <div class="relative">
+          <canvas id="streamVideoCanvas" class="block w-full"></canvas>
+          <canvas id="streamOverlayCanvas" class="absolute inset-0 pointer-events-none"></canvas>
         </div>
       </div>
-      <div class="thumbnail-container" id="streamThumbnailContainer"></div>
+      <div class="flex flex-wrap gap-4 mt-4" id="streamThumbnailContainer"></div>
     </div>
-    
-    <div id="imageModal" class="hidden">
-      <div id="modalPrev" class="modal-nav">&#9664;</div>
-      <img id="modalImage" src="">
-      <div id="modalNext" class="modal-nav">&#9654;</div>
+
+    <!-- 模态层显示大图 -->
+    <div id="imageModal" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-75 hidden z-50">
+      <div class="relative">
+        <img id="modalImage" src="" class="max-w-full max-h-[80vh] rounded border-4 border-white">
+        <div id="modalPrev" class="absolute top-1/2 left-0 transform -translate-y-1/2 text-white text-3xl cursor-pointer px-4 select-none">&#9664;</div>
+        <div id="modalNext" class="absolute top-1/2 right-0 transform -translate-y-1/2 text-white text-3xl cursor-pointer px-4 select-none">&#9654;</div>
+      </div>
     </div>
   </div>
-  
+
   <script>
     // 全局缩略图数据及尺寸记录
     let fileThumbnailList = [];
@@ -248,7 +113,7 @@
     let currentModalIndex = 0;
     let fileOriginalWidth = 0, fileOriginalHeight = 0;
     let streamOriginalWidth = 0, streamOriginalHeight = 0;
-    
+
     function updateThumbnailIndices(containerId) {
       const container = document.getElementById(containerId);
       Array.from(container.children).forEach((child, index) => {
@@ -258,32 +123,32 @@
         }
       });
     }
-    
+
     // ---------------------------
     // 标签切换逻辑
     const tabFile = document.getElementById('tabFile');
     const tabStream = document.getElementById('tabStream');
     const sectionFile = document.getElementById('sectionFile');
     const sectionStream = document.getElementById('sectionStream');
-    
+
     tabFile.addEventListener('click', () => {
-      tabFile.classList.add('active-tab');
-      tabFile.classList.remove('inactive-tab');
-      tabStream.classList.add('inactive-tab');
-      tabStream.classList.remove('active-tab');
-      sectionFile.classList.add('active');
-      sectionStream.classList.remove('active');
+      tabFile.classList.replace('bg-gray-200', 'bg-blue-500');
+      tabFile.classList.replace('text-gray-800', 'text-white');
+      tabStream.classList.replace('bg-blue-500', 'bg-gray-200');
+      tabStream.classList.replace('text-white', 'text-gray-800');
+      sectionFile.classList.remove('hidden');
+      sectionStream.classList.add('hidden');
     });
-    
+
     tabStream.addEventListener('click', () => {
-      tabStream.classList.add('active-tab');
-      tabStream.classList.remove('inactive-tab');
-      tabFile.classList.add('inactive-tab');
-      tabFile.classList.remove('active-tab');
-      sectionStream.classList.add('active');
-      sectionFile.classList.remove('active');
+      tabStream.classList.replace('bg-gray-200', 'bg-blue-500');
+      tabStream.classList.replace('text-gray-800', 'text-white');
+      tabFile.classList.replace('bg-blue-500', 'bg-gray-200');
+      tabFile.classList.replace('text-white', 'text-gray-800');
+      sectionStream.classList.remove('hidden');
+      sectionFile.classList.add('hidden');
     });
-    
+
     // ---------------------------
     // 【本地视频模式】相关代码
     let fileLastDetection = null;
@@ -292,7 +157,7 @@
     let fileLastFpsTime = Date.now();
     let fileCurrentFPS = 0;
     let fileWs;
-    
+
     function drawImageOnCanvas(blob, canvas, overlayCanvas, type) {
       createImageBitmap(blob).then(imgBitmap => {
         if(type === 'file' && fileOriginalWidth === 0){
@@ -312,7 +177,7 @@
         ctx.drawImage(imgBitmap, 0, 0);
       }).catch(err => console.error("createImageBitmap error:", err));
     }
-    
+
     // 初始化本地视频 WebSocket，并添加心跳与重连逻辑
     function initFileWebSocket() {
       fileWs = new WebSocket(`ws://${window.location.host}/ws?session_id=${session_id}`);
@@ -342,9 +207,7 @@
           try {
             const data = JSON.parse(jsonStr);
             if (data.bboxes && data.bboxes.length > 0) {
-              data.bboxes.forEach(item => {
-                  console.log("bbox:", item.bbox_2d, "label:", item.label);
-                });
+              data.bboxes.forEach(item => console.log("bbox:", item.bbox_2d, "label:", item.label));
               fileLastDetection = data;
               fileDetectionTimestamp = Date.now();
               setTimeout(addFileThumbnail, 100);
@@ -359,7 +222,6 @@
         console.warn("本地视频 WebSocket 已关闭，尝试重连...");
         setTimeout(initFileWebSocket, 3000);
       };
-      // 每隔 30 秒发送心跳 ping
       setInterval(() => {
         if (fileWs.readyState === WebSocket.OPEN) {
           fileWs.send("ping");
@@ -367,7 +229,7 @@
       }, 30000);
     }
     initFileWebSocket();
-    
+
     function updateFileOverlay() {
       const fileOverlayCanvas = document.getElementById('fileOverlayCanvas');
       const ctx = fileOverlayCanvas.getContext('2d');
@@ -389,35 +251,28 @@
       requestAnimationFrame(updateFileOverlay);
     }
     updateFileOverlay();
-    
+
     function addFileThumbnail() {
       const fileVideoCanvas = document.getElementById('fileVideoCanvas');
       if (fileVideoCanvas.width && fileVideoCanvas.height && fileLastDetection) {
         const dataURL = fileVideoCanvas.toDataURL("image/jpeg", 0.5);
         const labels = fileLastDetection.bboxes.map(det => det.label);
-        const uniqueLabels = [...new Set(labels)];
-        const labelText = uniqueLabels.join(", ");
-        
+        const labelText = [...new Set(labels)].join(", ");
         const thumbnailItem = document.createElement("div");
-        thumbnailItem.className = "thumbnail-item";
-        
+        thumbnailItem.className = "border border-gray-300 rounded p-2 flex flex-col items-center";
         const img = document.createElement("img");
         img.src = dataURL;
         fileThumbnailList.push(dataURL);
         img.dataset.index = fileThumbnailList.length - 1;
-        img.addEventListener("click", () => {
-          showModal(fileThumbnailList, parseInt(img.dataset.index));
-        });
+        img.className = "w-20 cursor-pointer mb-1";
+        img.addEventListener("click", () => showModal(fileThumbnailList, parseInt(img.dataset.index)));
         thumbnailItem.appendChild(img);
-        
         const labelDiv = document.createElement("div");
-        labelDiv.className = "thumbnail-label";
+        labelDiv.className = "text-xs text-gray-700 break-all text-center";
         labelDiv.innerText = labelText;
         thumbnailItem.appendChild(labelDiv);
-        
         document.getElementById('fileThumbnailContainer').appendChild(thumbnailItem);
-        
-        while (fileThumbnailList.length > 6) {
+        if(fileThumbnailList.length > 6) {
           fileThumbnailList.shift();
           document.getElementById('fileThumbnailContainer').removeChild(
             document.getElementById('fileThumbnailContainer').firstChild
@@ -426,7 +281,7 @@
         updateThumbnailIndices('fileThumbnailContainer');
       }
     }
-    
+
     document.getElementById('fileUploadForm').addEventListener('submit', (e) => {
       e.preventDefault();
       const fileInput = document.getElementById('videoInput');
@@ -463,7 +318,7 @@
       };
       xhr.send(formData);
     });
-    
+
     document.getElementById('fileAnalyzeButton').addEventListener('click', async () => {
       const objectStr = document.getElementById('fileObjectInput').value;
       if (!objectStr) {
@@ -488,7 +343,7 @@
         alert("启动识别失败，请重试");
       }
     });
-    
+
     // ---------------------------
     // 【互联网流模式】相关代码
     let streamLastDetection = null;
@@ -497,8 +352,7 @@
     let streamLastFpsTime = Date.now();
     let streamCurrentFPS = 0;
     let streamWs;
-    
-    // 初始化互联网流 WebSocket，添加心跳及重连逻辑
+
     function initStreamWebSocket() {
       streamWs = new WebSocket(`ws://${window.location.host}/ws/stream?session_id=${session_id}`);
       streamWs.binaryType = "blob";
@@ -527,9 +381,7 @@
           try {
             const data = JSON.parse(jsonStr);
             if (data.bboxes && data.bboxes.length > 0) {
-              data.bboxes.forEach(item => {
-                  console.log("bbox:", item.bbox_2d, "label:", item.label);
-                });
+              data.bboxes.forEach(item => console.log("bbox:", item.bbox_2d, "label:", item.label));
               streamLastDetection = data;
               streamDetectionTimestamp = Date.now();
               setTimeout(addStreamThumbnail, 100);
@@ -550,7 +402,7 @@
         }
       }, 30000);
     }
-    
+
     function updateStreamOverlay() {
       const streamOverlayCanvas = document.getElementById('streamOverlayCanvas');
       const ctx = streamOverlayCanvas.getContext('2d');
@@ -572,35 +424,28 @@
       requestAnimationFrame(updateStreamOverlay);
     }
     updateStreamOverlay();
-    
+
     function addStreamThumbnail() {
       const streamVideoCanvas = document.getElementById('streamVideoCanvas');
       if (streamVideoCanvas.width && streamVideoCanvas.height && streamLastDetection) {
         const dataURL = streamVideoCanvas.toDataURL("image/jpeg", 0.5);
         const labels = streamLastDetection.bboxes.map(det => det.label);
-        const uniqueLabels = [...new Set(labels)];
-        const labelText = uniqueLabels.join(", ");
-        
+        const labelText = [...new Set(labels)].join(", ");
         const thumbnailItem = document.createElement("div");
-        thumbnailItem.className = "thumbnail-item";
-        
+        thumbnailItem.className = "border border-gray-300 rounded p-2 flex flex-col items-center";
         const img = document.createElement("img");
         img.src = dataURL;
         streamThumbnailList.push(dataURL);
         img.dataset.index = streamThumbnailList.length - 1;
-        img.addEventListener("click", () => {
-          showModal(streamThumbnailList, parseInt(img.dataset.index));
-        });
+        img.className = "w-20 cursor-pointer mb-1";
+        img.addEventListener("click", () => showModal(streamThumbnailList, parseInt(img.dataset.index)));
         thumbnailItem.appendChild(img);
-        
         const labelDiv = document.createElement("div");
-        labelDiv.className = "thumbnail-label";
+        labelDiv.className = "text-xs text-gray-700 break-all text-center";
         labelDiv.innerText = labelText;
         thumbnailItem.appendChild(labelDiv);
-        
         document.getElementById('streamThumbnailContainer').appendChild(thumbnailItem);
-        
-        while (streamThumbnailList.length > 6) {
+        if(streamThumbnailList.length > 6) {
           streamThumbnailList.shift();
           document.getElementById('streamThumbnailContainer').removeChild(
             document.getElementById('streamThumbnailContainer').firstChild
@@ -609,7 +454,7 @@
         updateThumbnailIndices('streamThumbnailContainer');
       }
     }
-    
+
     document.getElementById('streamCombinedForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const objectStr = document.getElementById('streamObjectInput').value;
@@ -630,7 +475,6 @@
         });
         if (!analyzeResponse.ok) throw new Error("检测目标设置失败");
         console.log("检测目标设置成功");
-        
         const streamResponse = await fetch('/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -644,8 +488,8 @@
         alert("启动互联网流失败，请重试");
       }
     });
-    
-    // 新增：暂停、恢复、停止互联网流按钮事件
+
+    // 控制互联网流按钮事件
     document.getElementById('pauseStreamButton').addEventListener('click', async () => {
       try {
         const response = await fetch('/stream/pause', {
@@ -659,7 +503,7 @@
         console.error("暂停流错误:", error);
       }
     });
-    
+
     document.getElementById('resumeStreamButton').addEventListener('click', async () => {
       try {
         const response = await fetch('/stream/resume', {
@@ -673,7 +517,7 @@
         console.error("恢复流错误:", error);
       }
     });
-    
+
     document.getElementById('stopStreamButton').addEventListener('click', async () => {
       try {
         const response = await fetch('/stream/stop', {
@@ -687,7 +531,7 @@
         console.error("停止流错误:", error);
       }
     });
-    
+
     // 模态层显示与导航
     function showModal(thumbnailList, index) {
       currentModalList = thumbnailList;
@@ -697,26 +541,26 @@
       modalImage.src = currentModalList[currentModalIndex];
       modal.classList.remove("hidden");
     }
-    
+
     document.getElementById("modalPrev").addEventListener("click", (e) => {
       e.stopPropagation();
       if (currentModalList.length === 0) return;
       currentModalIndex = (currentModalIndex - 1 + currentModalList.length) % currentModalList.length;
       document.getElementById("modalImage").src = currentModalList[currentModalIndex];
     });
-    
+
     document.getElementById("modalNext").addEventListener("click", (e) => {
       e.stopPropagation();
       if (currentModalList.length === 0) return;
       currentModalIndex = (currentModalIndex + 1) % currentModalList.length;
       document.getElementById("modalImage").src = currentModalList[currentModalIndex];
     });
-    
+
     document.getElementById("imageModal").addEventListener("click", (e) => {
       if(e.target.classList.contains("modal-nav")) return;
       document.getElementById("imageModal").classList.add("hidden");
     });
-    
+
     // 全屏播放功能
     function toggleFullScreen(containerId) {
       const container = document.getElementById(containerId);
@@ -728,18 +572,16 @@
         document.exitFullscreen();
       }
     }
-    
+
     document.getElementById("fileFullScreenButton").addEventListener("click", (e) => {
       e.stopPropagation();
       toggleFullScreen("fileVideoContainer");
     });
-    
+
     document.getElementById("streamFullScreenButton").addEventListener("click", (e) => {
       e.stopPropagation();
       toggleFullScreen("streamVideoContainer");
     });
-    
-    document.addEventListener("fullscreenchange", () => {});
   </script>
 </body>
 </html>
