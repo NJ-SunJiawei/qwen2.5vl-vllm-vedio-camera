@@ -372,17 +372,18 @@
       const fileOverlayCanvas = document.getElementById('fileOverlayCanvas');
       const ctx = fileOverlayCanvas.getContext('2d');
       ctx.clearRect(0, 0, fileOverlayCanvas.width, fileOverlayCanvas.height);
-      if (fileLastDetection && (Date.now() - fileDetectionTimestamp < 1000) && fileOriginalWidth) {
+      //1200:绿色标记框停留的时延
+      if (fileLastDetection && (Date.now() - fileDetectionTimestamp < 1200) && fileOriginalWidth) {
         const rect = fileOverlayCanvas.getBoundingClientRect();
         const scaleX = rect.width / fileOriginalWidth;
         const scaleY = rect.height / fileOriginalHeight;
         fileLastDetection.bboxes.forEach(det => {
           const [x1, y1, x2, y2] = det.bbox_2d;
-          ctx.strokeStyle = "green";
+          ctx.strokeStyle = "lime";
           ctx.lineWidth = 2;
           ctx.strokeRect(x1 * scaleX, y1 * scaleY, (x2 - x1) * scaleX, (y2 - y1) * scaleY);
           ctx.font = "14px Arial";
-          ctx.fillStyle = "green";
+          ctx.fillStyle = "lime";
           ctx.fillText(det.label, x1 * scaleX, (y1 * scaleY) - 5);
         });
       }
@@ -555,17 +556,18 @@
       const streamOverlayCanvas = document.getElementById('streamOverlayCanvas');
       const ctx = streamOverlayCanvas.getContext('2d');
       ctx.clearRect(0, 0, streamOverlayCanvas.width, streamOverlayCanvas.height);
-      if (streamLastDetection && (Date.now() - streamDetectionTimestamp < 1000) && streamOriginalWidth) {
+      //1200:绿色标记框停留的时延
+      if (streamLastDetection && (Date.now() - streamDetectionTimestamp < 1200) && streamOriginalWidth) {
         const rect = streamOverlayCanvas.getBoundingClientRect();
         const scaleX = rect.width / streamOriginalWidth;
         const scaleY = rect.height / streamOriginalHeight;
         streamLastDetection.bboxes.forEach(det => {
           const [x1, y1, x2, y2] = det.bbox_2d;
-          ctx.strokeStyle = "green";
+          ctx.strokeStyle = "lime";
           ctx.lineWidth = 2;
           ctx.strokeRect(x1 * scaleX, y1 * scaleY, (x2 - x1) * scaleX, (y2 - y1) * scaleY);
           ctx.font = "14px Arial";
-          ctx.fillStyle = "green";
+          ctx.fillStyle = "lime";
           ctx.fillText(det.label, x1 * scaleX, (y1 * scaleY) - 5);
         });
       }
