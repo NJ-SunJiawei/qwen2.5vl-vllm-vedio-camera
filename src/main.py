@@ -42,7 +42,7 @@ SEND_WORKER_COUNT = 4        # 发送任务的工作线程数量（仅在 DIRECT
 OPENAI_WORKER_COUNT = 10     # 调用大模型线程池数量
 TARGET_FPS = 50              # 发送帧率（用于限制发送速度,暂时处理效率跟不上无效）
 ANALYSIS_FPS = 20            # 分析帧率（用于降低原始帧）
-FRAME_SKIP = 500             # 基础跳帧数（用于检测抽帧）
+FRAME_SKIP = 400             # 基础跳帧数（用于检测抽帧）
 
 client = OpenAI(
     base_url="http://124.220.202.52:8000/v1",
@@ -447,8 +447,10 @@ async def stream_video_reader(session_id: str, stream_url: str):
             await asyncio.sleep(0.01)
             continue
         if frame_id % frame_interval == 0:
-            resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)))
-            _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
+            #resized_frame = cv2.resize(frame, (640, 360)) #固定目标分辨率
+            #resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)))##调整缩放比例
+            resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)), interpolation=cv2.INTER_AREA) #使用 cv2.INTER_AREA 进行插值，避免模糊
+            _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
             binary_frame = buffer.tobytes()
             second = frame_id // int(fps)
             object_str = stream_detection.get(session_id, "")
