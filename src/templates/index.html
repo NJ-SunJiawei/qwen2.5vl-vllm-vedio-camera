@@ -334,7 +334,8 @@
             if (data.bboxes && data.bboxes.length > 0) {
               fileLastDetection = data;
               fileDetectionTimestamp = Date.now();
-              addFileThumbnail();
+              // 延时100毫秒后生成缩略图，确保画布已更新
+              setTimeout(addFileThumbnail, 100);
             }
           } catch (error) {
             console.error("本地视频解析 JSON 错误:", error);
@@ -367,6 +368,7 @@
     }
     updateFileOverlay();
     
+    // 修复：将 dataset.index 设为当前 push 后的索引（length - 1）
     function addFileThumbnail() {
       const fileVideoCanvas = document.getElementById('fileVideoCanvas');
       if (fileVideoCanvas.width && fileVideoCanvas.height && fileLastDetection) {
@@ -380,7 +382,8 @@
         
         const img = document.createElement("img");
         img.src = dataURL;
-        img.dataset.index = fileThumbnailList.length;
+        fileThumbnailList.push(dataURL);
+        img.dataset.index = fileThumbnailList.length - 1;
         img.addEventListener("click", () => {
           showModal(fileThumbnailList, parseInt(img.dataset.index));
         });
@@ -392,10 +395,13 @@
         thumbnailItem.appendChild(labelDiv);
         
         document.getElementById('fileThumbnailContainer').appendChild(thumbnailItem);
-        fileThumbnailList.push(dataURL);
+        
+        // 若超过5个，则移除最旧的一个
         while (fileThumbnailList.length > 5) {
           fileThumbnailList.shift();
-          document.getElementById('fileThumbnailContainer').removeChild(document.getElementById('fileThumbnailContainer').firstChild);
+          document.getElementById('fileThumbnailContainer').removeChild(
+            document.getElementById('fileThumbnailContainer').firstChild
+          );
         }
       }
     }
@@ -502,12 +508,10 @@
             const data = JSON.parse(jsonStr);
             console.log("互联网流接收到检测结果:", data);
             if (data.bboxes && data.bboxes.length > 0) {
-              data.bboxes.forEach(item => {
-                console.log("bbox:", item.bbox_2d, "label:", item.label);
-              });
               streamLastDetection = data;
               streamDetectionTimestamp = Date.now();
-              addStreamThumbnail();
+              // 延时100毫秒后生成缩略图
+              setTimeout(addStreamThumbnail, 100);
             }
           } catch (error) {
             console.error("互联网流解析 JSON 错误:", error);
@@ -538,6 +542,7 @@
     }
     updateStreamOverlay();
     
+    // 同样修复：将 dataset.index 设为当前 push 后的索引（length - 1）
     function addStreamThumbnail() {
       const streamVideoCanvas = document.getElementById('streamVideoCanvas');
       if (streamVideoCanvas.width && streamVideoCanvas.height && streamLastDetection) {
@@ -551,7 +556,8 @@
         
         const img = document.createElement("img");
         img.src = dataURL;
-        img.dataset.index = streamThumbnailList.length;
+        streamThumbnailList.push(dataURL);
+        img.dataset.index = streamThumbnailList.length - 1;
         img.addEventListener("click", () => {
           showModal(streamThumbnailList, parseInt(img.dataset.index));
         });
@@ -563,10 +569,13 @@
         thumbnailItem.appendChild(labelDiv);
         
         document.getElementById('streamThumbnailContainer').appendChild(thumbnailItem);
-        streamThumbnailList.push(dataURL);
+        
+        // 若超过5个，则移除最旧的一个
         while (streamThumbnailList.length > 5) {
           streamThumbnailList.shift();
-          document.getElementById('streamThumbnailContainer').removeChild(document.getElementById('streamThumbnailContainer').firstChild);
+          document.getElementById('streamThumbnailContainer').removeChild(
+            document.getElementById('streamThumbnailContainer').firstChild
+          );
         }
       }
     }
