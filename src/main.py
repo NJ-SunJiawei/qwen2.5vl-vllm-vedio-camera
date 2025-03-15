@@ -41,7 +41,7 @@ SEND_WORKER_COUNT = 4        # 发送任务的工作线程数量（仅在 DIRECT
 OPENAI_WORKER_COUNT = 10     # 调用大模型线程池数量
 TARGET_FPS = 50              # 发送帧率（用于限制发送速度）
 ANALYSIS_FPS = 20            # 分析帧率（用于降低原始帧）
-FRAME_SKIP = 100             # 基础跳帧数（用于检测抽帧）
+FRAME_SKIP = 200             # 基础跳帧数（用于检测抽帧）
 
 client = OpenAI(
     base_url="http://124.220.202.52:8000/v1",
