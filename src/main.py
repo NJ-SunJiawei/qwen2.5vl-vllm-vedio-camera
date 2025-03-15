@@ -120,8 +120,8 @@ async def analyze_frame(session_id: str, frame_id: int, frame_np: bytes, object_
         raise
 
 def process_frame_wrapper(session_id, frame_id, frame_np, object_str):
-    # 增加重试机制，最多重试 2 次
-    for attempt in range(2):
+    # 增加重试机制，最多重试 1 次
+    for attempt in range(1):
         try:
             # 限制并发调用 API
             with analysis_semaphore:
