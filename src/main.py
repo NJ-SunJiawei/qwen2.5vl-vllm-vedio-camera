@@ -39,10 +39,10 @@ DIRECT_SEND_MODE = True
 # --------------------
 WORKER_COUNT = 4             # 处理帧的工作线程数量
 SEND_WORKER_COUNT = 4        # 发送任务的工作线程数量（仅在 DIRECT_SEND_MODE=False 时使用）
-OPENAI_WORKER_COUNT=10       # 调用大模型线程池数量
+OPENAI_WORKER_COUNT = 10     # 调用大模型线程池数量
 TARGET_FPS = 50              # 发送帧率（用于限制发送速度）
-ANALYSIS_FPS = 20            # 分析帧率
-FRAME_SKIP = 100             # 基础跳帧数
+ANALYSIS_FPS = 20            # 分析帧率（用于降低原始帧）
+FRAME_SKIP = 100             # 基础跳帧数（用于检测抽帧）
 
 client = OpenAI(
     base_url="http://124.220.202.52:8000/v1",
@@ -86,7 +86,7 @@ def get_effective_skip(queue_size, base_skip=FRAME_SKIP):
     else:
         return base_skip
 
-async def analyze_frame(frame_np: bytes, object_str: str):
+async def analyze_frame(session_id: str, frame_id: int, frame_np: bytes, object_str: str):
     base64_image = base64.b64encode(frame_np).decode('utf-8')
     prompt_str = f"""
     Analyze the image and extract the bounding box coordinates for the objects specified in the list: {object_str}.
@@ -94,7 +94,7 @@ async def analyze_frame(frame_np: bytes, object_str: str):
     [{{"bbox_2d": [x1, y1, x2, y2], "label": "object_label"}}, ...]
     If an object is not found, do not include it. If none found, return an empty list.
     """
-    logging.info("Sending request to OpenAI...")
+    logging.info(f"Sending request to OpenAI, session: {session_id}, frame: {frame_id}")
     try:
         response = await asyncio.to_thread(
             client.chat.completions.create,
@@ -117,19 +117,21 @@ async def analyze_frame(frame_np: bytes, object_str: str):
             logging.error(f"JSON decode error: {e}")
             return {"bboxes": []}
     except Exception as e:
-        logging.error(f"Error during analysis: {e}")
+        logging.error(f"Error during analysis, session: {session_id}, frame: {frame_id}: {e}")
         raise
 
-def process_frame_wrapper(frame_np, object_str):
+def process_frame_wrapper(session_id, frame_id, frame_np, object_str):
     # 增加重试机制，最多重试 2 次
     for attempt in range(2):
         try:
             # 限制并发调用 API
             with analysis_semaphore:
-                future = thread_executor.submit(lambda: asyncio.run(analyze_frame(frame_np, object_str)))
+                future = thread_executor.submit(
+                    lambda: asyncio.run(analyze_frame(session_id, frame_id, frame_np, object_str))
+                )
                 return future.result()
         except Exception as e:
-            logging.error(f"Attempt {attempt+1} failed: {e}")
+            logging.error(f"Attempt {attempt+1} failed for session {session_id}, frame {frame_id}: {e}")
             time.sleep(1)
     # 重试失败后返回空检测结果
     return {"bboxes": []}
@@ -149,6 +151,7 @@ async def send_result_direct(session_id: str, binary_frame: bytes, result: dict,
         if sleep_time > 0:
             await asyncio.sleep(sleep_time)
         try:
+            # 顺序发送，先发送二进制数据，再发送 JSON 数据
             await ws.send_bytes(binary_frame)
             await ws.send_json(result)
         except Exception as e:
@@ -206,10 +209,10 @@ async def worker_task(worker_id: int, queue: asyncio.Queue):
             try:
                 result = await loop.run_in_executor(
                     None,
-                    lambda: process_frame_wrapper(binary_frame, object_str)
+                    lambda: process_frame_wrapper(session_id, frame_id, binary_frame, object_str)
                 )
             except Exception as e:
-                logging.error(f"Frame {frame_id} processing error: {e}")
+                logging.error(f"Frame {frame_id} processing error for session {session_id}: {e}")
                 result = {"bboxes": []}
         else:
             result = {"bboxes": []}
@@ -223,7 +226,7 @@ async def worker_task(worker_id: int, queue: asyncio.Queue):
             else:
                 send_worker_index = hash(session_id) % SEND_WORKER_COUNT
                 await stream_send_queues[send_worker_index].put((session_id, binary_frame, result))
-        logging.info(f"Worker {worker_id}: Processed frame {frame_id} for session {session_id}. Queue size: {queue.qsize()}")
+        logging.debug(f"Worker {worker_id}: Processed frame {frame_id} for session {session_id}. Queue size: {queue.qsize()}")
         queue.task_done()
 
 # --------------------
