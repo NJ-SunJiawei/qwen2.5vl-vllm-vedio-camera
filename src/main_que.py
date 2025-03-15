@@ -343,7 +343,7 @@ async def stream_video_reader(session_id: str, stream_url: str):
             worker_index = hash(session_id) % WORKER_COUNT
             await worker_queues[worker_index].put((session_id, frame_id, binary_frame, object_str, second, "stream"))
         frame_id += 1
-        await asyncio.sleep(0)
+        await asyncio.sleep(0) #让出控制权
     cap.release()
 
 # --------------------
