@@ -10,6 +10,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import logging
+import collections
 
 from fastapi import FastAPI, WebSocket, UploadFile, File, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse
@@ -127,7 +128,6 @@ def process_frame_wrapper(session_id, frame_id, frame_np, object_str):
     # 增加重试机制，最多重试 1 次
     for attempt in range(1):
         try:
-            # 限制并发调用 API
             with analysis_semaphore:
                 future = thread_executor.submit(
                     lambda: asyncio.run(analyze_frame(session_id, frame_id, frame_np, object_str))
@@ -136,15 +136,12 @@ def process_frame_wrapper(session_id, frame_id, frame_np, object_str):
         except Exception as e:
             logging.error(f"Attempt {attempt+1} failed for session {session_id}, frame {frame_id}: {e}")
             time.sleep(1)
-    # 重试失败后返回空检测结果
     return {"bboxes": []}
 
 async def send_result_direct(session_id: str, binary_frame: bytes, result: dict, mode: str):
-    # 根据 mode 获取对应的 WebSocket
     ws = file_sessions.get(session_id) if mode == "file" else stream_sessions.get(session_id)
     if not ws:
         return
-    # 获取（或创建）该 session 的发送锁
     lock = direct_send_locks.setdefault(session_id, asyncio.Lock())
     async with lock:
         now = time.time()
@@ -154,7 +151,6 @@ async def send_result_direct(session_id: str, binary_frame: bytes, result: dict,
         if sleep_time > 0:
             await asyncio.sleep(sleep_time)
         try:
-            # 顺序发送，先发送二进制数据，再发送 JSON 数据
             await ws.send_bytes(binary_frame)
             await ws.send_json(result)
         except Exception as e:
@@ -162,7 +158,6 @@ async def send_result_direct(session_id: str, binary_frame: bytes, result: dict,
         direct_send_last_time[session_id] = time.time()
 
 async def send_file_results_worker(worker_index: int):
-    # 仅在 DIRECT_SEND_MODE=False 时启用
     interval = 1 / TARGET_FPS
     while True:
         start_time = time.time()
@@ -181,7 +176,6 @@ async def send_file_results_worker(worker_index: int):
         await asyncio.sleep(sleep_time)
 
 async def send_stream_results_worker(worker_index: int):
-    # 仅在 DIRECT_SEND_MODE=False 时启用
     interval = 1 / TARGET_FPS
     while True:
         start_time = time.time()
@@ -199,13 +193,21 @@ async def send_stream_results_worker(worker_index: int):
         sleep_time = max(0, interval - processing_time)
         await asyncio.sleep(sleep_time)
 
-# --------------------
-# 工作线程任务（各 worker_queue 独立执行）
-# --------------------
+# 清除指定 session 的所有队列数据
+async def clear_session_queues(session_id: str):
+    for q in worker_queues:
+        new_deque = collections.deque(item for item in q._queue if item[0] != session_id)
+        q._queue = new_deque
+    for q in file_send_queues:
+        new_deque = collections.deque(item for item in q._queue if item[0] != session_id)
+        q._queue = new_deque
+    for q in stream_send_queues:
+        new_deque = collections.deque(item for item in q._queue if item[0] != session_id)
+        q._queue = new_deque
+
 async def worker_task(worker_id: int, queue: asyncio.Queue):
     loop = asyncio.get_running_loop()
     while True:
-        # 任务格式：(session_id, frame_id, binary_frame, object_str, second, mode)
         session_id, frame_id, binary_frame, object_str, second, mode = await queue.get()
         effective_skip = get_effective_skip(queue.qsize(), FRAME_SKIP)
         if frame_id % effective_skip == 0 and object_str:
@@ -219,7 +221,6 @@ async def worker_task(worker_id: int, queue: asyncio.Queue):
                 result = {"bboxes": []}
         else:
             result = {"bboxes": []}
-        # 根据宏开关决定发送模式
         if DIRECT_SEND_MODE:
             await send_result_direct(session_id, binary_frame, result, mode)
         else:
@@ -232,9 +233,6 @@ async def worker_task(worker_id: int, queue: asyncio.Queue):
         logging.debug(f"Worker {worker_id}: Processed frame {frame_id} for session {session_id}. Queue size: {queue.qsize()}")
         queue.task_done()
 
-# --------------------
-# 启动任务：启动 worker 任务和（如果使用消息队列模式）发送任务
-# --------------------
 @app.on_event("startup")
 async def startup_event():
     for worker_id, q in enumerate(worker_queues):
@@ -260,12 +258,11 @@ class StreamAnalyzeRequest(BaseModel):
     session_id: str
     object_str: str
 
-# 新增：控制互联网流状态请求模型
 class StreamControlRequest(BaseModel):
     session_id: str
 
 # --------------------
-# WebSocket 接口（要求客户端在 URL 中传递 session_id 参数，并增加心跳处理）
+# WebSocket 接口
 # --------------------
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -366,7 +363,6 @@ async def start_stream(request: StreamRequest, background_tasks: BackgroundTasks
     if not stream_url:
         return {"status": "error", "message": "缺少流地址"}
     logging.info(f"启动互联网流拉流，session: {session_id}, 流地址: {stream_url}")
-    # 初始化状态为 running
     stream_state[session_id] = "running"
     background_tasks.add_task(stream_video_reader, session_id, stream_url)
     return {"status": "success", "message": "互联网流拉流启动", "stream_url": stream_url}
@@ -385,7 +381,7 @@ async def analyze_stream(request: StreamAnalyzeRequest):
     return {"status": "success", "message": "互联网流目标检测已启动", "object": object_str}
 
 # --------------------
-# 新增接口：暂停互联网流
+# 新增接口：暂停互联网流（同时清空该 session 队列数据）
 # --------------------
 @app.post("/stream/pause")
 async def pause_stream(request: StreamControlRequest):
@@ -393,11 +389,12 @@ async def pause_stream(request: StreamControlRequest):
     if session_id not in stream_state:
         return {"status": "error", "message": "无效的 session_id"}
     stream_state[session_id] = "paused"
-    logging.info(f"暂停互联网流，session: {session_id}")
-    return {"status": "success", "message": "互联网流已暂停"}
+    await clear_session_queues(session_id)
+    logging.info(f"暂停互联网流，并清空队列数据，session: {session_id}")
+    return {"status": "success", "message": "互联网流已暂停，队列数据已清空"}
 
 # --------------------
-# 新增接口：恢复互联网流（从暂停状态恢复）
+# 新增接口：恢复互联网流（从暂停状态恢复，不清空队列数据）
 # --------------------
 @app.post("/stream/resume")
 async def resume_stream(request: StreamControlRequest):
@@ -409,7 +406,7 @@ async def resume_stream(request: StreamControlRequest):
     return {"status": "success", "message": "互联网流已恢复"}
 
 # --------------------
-# 新增接口：停止互联网流（关闭拉流）
+# 新增接口：停止互联网流（关闭拉流并清空队列数据）
 # --------------------
 @app.post("/stream/stop")
 async def stop_stream(request: StreamControlRequest):
@@ -417,11 +414,12 @@ async def stop_stream(request: StreamControlRequest):
     if session_id not in stream_state:
         return {"status": "error", "message": "无效的 session_id"}
     stream_state[session_id] = "stopped"
-    logging.info(f"停止互联网流，session: {session_id}")
-    return {"status": "success", "message": "互联网流已停止"}
+    await clear_session_queues(session_id)
+    logging.info(f"停止互联网流，并清空队列数据，session: {session_id}")
+    return {"status": "success", "message": "互联网流已停止，队列数据已清空"}
 
 # --------------------
-# 互联网流视频读取任务（支持 RTSP），每个 session 独立拉流
+# 互联网流视频读取任务（支持 RTSP）
 # --------------------
 async def stream_video_reader(session_id: str, stream_url: str):
     cap = cv2.VideoCapture(stream_url)
@@ -435,7 +433,6 @@ async def stream_video_reader(session_id: str, stream_url: str):
     frame_id = 0
     logging.info(f"开始拉流，session: {session_id}，原始fps: {fps}, 目标fps: {ANALYSIS_FPS}")
     while True:
-        # 检查当前状态
         current_state = stream_state.get(session_id, "running")
         if current_state == "stopped":
             logging.info(f"拉流停止，session: {session_id}")
@@ -445,13 +442,10 @@ async def stream_video_reader(session_id: str, stream_url: str):
             logging.error(f"读取网络流帧失败，session: {session_id}，等待重试...")
             await asyncio.sleep(0.1)
             continue
-
         if current_state == "paused":
-            # 暂停状态下丢弃帧，不加入处理队列
             frame_id += 1
             await asyncio.sleep(0.01)
             continue
-
         if frame_id % frame_interval == 0:
             resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)))
             _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
