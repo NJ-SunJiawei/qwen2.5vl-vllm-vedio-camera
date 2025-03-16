@@ -16,7 +16,6 @@ from fastapi import FastAPI, WebSocket, UploadFile, File, Request, BackgroundTas
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-# 请确保 openai 模块已正确安装和配置
 from openai import OpenAI
 
 logging.basicConfig(level=logging.INFO,
@@ -26,20 +25,20 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 # --------------------
-# 宏开关设置
+# 宏开关和基本参数
 # --------------------
 DIRECT_SEND_MODE = False
 WORKER_COUNT = 8             # 处理帧的工作线程数量
-SEND_WORKER_COUNT = 8        # 发送任务的工作线程数量（仅在 DIRECT_SEND_MODE=False 时使用）
+SEND_WORKER_COUNT = 8        # 发送任务的工作线程数量
 OPENAI_WORKER_COUNT = 10     # 调用大模型线程池数量
-TARGET_FPS = 50              # 发送帧率
-ANALYSIS_FPS = 20            # 分析帧率
-FRAME_SKIP = 100             # 基础跳帧数
+TARGET_FPS = 20              # 发送帧率
+ANALYSIS_FPS = 5             # 分析帧率
+FRAME_SKIP = 200             # 基础跳帧数
 
 client = OpenAI(
-    base_url="http://124.220.202.52:8000/v1",
+    base_url="http://124.220.202.52:8000/v1",  # 示例地址
     api_key="EMPTY",
-    max_retries=0  # 只重试 0 次
+    max_retries=0
 )
 
 UPLOAD_DIR = Path("uploads")
@@ -54,15 +53,14 @@ stream_send_queues = [asyncio.Queue() for _ in range(SEND_WORKER_COUNT)]
 file_sessions = {}    # 本地视频会话
 stream_sessions = {}  # 互联网流会话
 
-stream_detection = {}  # 键：session_id，值：检测目标字符串
-stream_state = {}      # 键：session_id，值：状态字符串
+stream_detection = {}  # session_id -> 检测目标字符串
+stream_state = {}      # session_id -> 状态 "running" / "paused" / "stopped"
 
 analysis_semaphore = threading.Semaphore(5)
-direct_send_locks = {}       # key: session_id, value: asyncio.Lock()
-direct_send_last_time = {}   # key: session_id, value: timestamp (float)
+direct_send_locks = {}
+direct_send_last_time = {}
 
-# 新增：记录每个 session 的发送 fps 统计数据
-send_fps_data = {}  # key: session_id, value: {"frame_count": int, "last_time": float, "actual_fps": float}
+send_fps_data = {}  # 发送FPS统计
 
 def get_effective_skip(queue_size, base_skip=FRAME_SKIP):
     if queue_size > 50:
@@ -73,13 +71,12 @@ def get_effective_skip(queue_size, base_skip=FRAME_SKIP):
         return base_skip
 
 def build_combined_result(session_id: str, binary_frame: bytes, result: dict) -> dict:
-    """更新指定 session 的 fps 统计，并返回带有实际 fps 数据的发送内容"""
     now = time.time()
     fps_data = send_fps_data.setdefault(session_id, {"frame_count": 0, "last_time": now, "actual_fps": 0})
     fps_data["frame_count"] += 1
     if now - fps_data["last_time"] >= 1.0:
         fps_data["actual_fps"] = fps_data["frame_count"] / (now - fps_data["last_time"])
-        logging.info(f"Session {session_id}: actual sending FPS: {fps_data['actual_fps']:.2f}")
+        logging.debug(f"Session {session_id}: actual sending FPS: {fps_data['actual_fps']:.2f}")
         fps_data["frame_count"] = 0
         fps_data["last_time"] = now
     return {
@@ -92,11 +89,10 @@ async def analyze_frame(session_id: str, frame_id: int, frame_np: bytes, object_
     base64_image = base64.b64encode(frame_np).decode('utf-8')
     prompt_str = f"""
     Analyze the image and extract the bounding box coordinates for the objects specified in the list: {object_str}.
-    For each object found, return a JSON array of detections in the following format:
+    Return a JSON array of detections in the format:
     [{{"bbox_2d": [x1, y1, x2, y2], "label": "object_label"}}, ...]
-    If an object is not found, do not include it. If none found, return an empty list.
+    If none found, return an empty list.
     """
-    logging.info(f"Sending request to OpenAI, session: {session_id}, frame: {frame_id}")
     try:
         response = await asyncio.to_thread(
             client.chat.completions.create,
@@ -120,7 +116,7 @@ async def analyze_frame(session_id: str, frame_id: int, frame_np: bytes, object_
             return {"bboxes": []}
     except Exception as e:
         logging.error(f"Error during analysis, session: {session_id}, frame: {frame_id}: {e}")
-        raise
+        return {"bboxes": []}
 
 def process_frame_wrapper(session_id, frame_id, frame_np, object_str):
     for attempt in range(1):
@@ -206,6 +202,8 @@ async def worker_task(worker_id: int, queue: asyncio.Queue):
     while True:
         session_id, frame_id, binary_frame, object_str, second, mode = await queue.get()
         effective_skip = get_effective_skip(queue.qsize(), FRAME_SKIP)
+        if mode == "stream":
+            effective_skip *= 1  # 降低互联网流的分析频率
         if frame_id % effective_skip == 0 and object_str:
             try:
                 result = await loop.run_in_executor(
@@ -217,6 +215,7 @@ async def worker_task(worker_id: int, queue: asyncio.Queue):
                 result = {"bboxes": []}
         else:
             result = {"bboxes": []}
+
         if DIRECT_SEND_MODE:
             await send_result_direct(session_id, binary_frame, result, mode)
         else:
@@ -226,7 +225,7 @@ async def worker_task(worker_id: int, queue: asyncio.Queue):
             else:
                 send_worker_index = (abs(hash(session_id)) % SEND_WORKER_COUNT)
                 await stream_send_queues[send_worker_index].put((session_id, binary_frame, result))
-        logging.debug(f"Worker {worker_id}: Processed frame {frame_id} for session {session_id}. Queue size: {queue.qsize()}")
+
         queue.task_done()
 
 @app.on_event("startup")
@@ -260,25 +259,6 @@ class StreamControlRequest(BaseModel):
 # --------------------
 # WebSocket 接口
 # --------------------
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    session_id = websocket.query_params.get("session_id")
-    if not session_id:
-        await websocket.close(code=1008)
-        return
-    await websocket.accept()
-    file_sessions[session_id] = websocket
-    logging.info(f"本地视频 WebSocket connected, session_id: {session_id}")
-    try:
-        while True:
-            msg = await websocket.receive_text()
-            if msg == "ping":
-                continue
-    except Exception as e:
-        logging.error(f"WebSocket error (file) session {session_id}: {e}")
-    finally:
-        file_sessions.pop(session_id, None)
-
 @app.websocket("/ws/stream")
 async def websocket_stream(websocket: WebSocket):
     session_id = websocket.query_params.get("session_id")
@@ -297,52 +277,31 @@ async def websocket_stream(websocket: WebSocket):
         logging.error(f"WebSocket error (stream) session {session_id}: {e}")
     finally:
         stream_sessions.pop(session_id, None)
+        logging.info(f"互联网流 WebSocket disconnected, session_id: {session_id}")
 
-@app.post("/upload")
-async def upload_video(video: UploadFile = File(...)):
-    logging.info("视频上传，保存中...")
-    video_path = UPLOAD_DIR / video.filename
-    with open(video_path, "wb") as buffer:
-        shutil.copyfileobj(video.file, buffer)
-    return {"status": "success", "message": "视频上传成功", "filename": video.filename}
+@app.websocket("/ws")
+async def websocket_file(websocket: WebSocket):
+    session_id = websocket.query_params.get("session_id")
+    if not session_id:
+        await websocket.close(code=1008)
+        return
+    await websocket.accept()
+    file_sessions[session_id] = websocket
+    logging.info(f"本地视频 WebSocket connected, session_id: {session_id}")
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            if msg == "ping":
+                continue
+    except Exception as e:
+        logging.error(f"WebSocket error (file) session {session_id}: {e}")
+    finally:
+        file_sessions.pop(session_id, None)
+        logging.info(f"本地视频 WebSocket disconnected, session_id: {session_id}")
 
-@app.post("/analyze")
-async def analyze_video(request: AnalyzeRequest):
-    session_id = request.session_id
-    object_str = request.object_str
-    filename = request.filename
-    logging.info(f"开始分析本地视频，session: {session_id}, 目标对象: {object_str}")
-    video_path = UPLOAD_DIR / filename
-    if not video_path.exists():
-        return {"status": "error", "message": "视频文件不存在"}
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
-        return {"status": "error", "message": "无法打开视频文件"}
-
-    fps = int(cap.get(cv2.CAP_PROP_FPS))
-    if fps <= 0:
-        fps = ANALYSIS_FPS
-    frame_interval = max(1, fps // ANALYSIS_FPS)
-    logging.info(f"原始fps: {fps}, 目标fps: {ANALYSIS_FPS}")
-
-    frame_id, second = 0, 0
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-        if frame_id % frame_interval == 0:
-            resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)))
-            _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
-            binary_frame = buffer.tobytes()
-            worker_index = (abs(hash(session_id)) % WORKER_COUNT)
-            await worker_queues[worker_index].put((session_id, frame_id, binary_frame, object_str, second, "file"))
-            logging.info(f"Frame {frame_id} added to worker {worker_index} queue for session {session_id}")
-        frame_id += 1
-        second = frame_id // fps
-    cap.release()
-    os.remove(video_path)
-    return {"status": "processing", "message": "视频分析中..."}
-
+# --------------------
+# 互联网流管理
+# --------------------
 @app.post("/stream")
 async def start_stream(request: StreamRequest, background_tasks: BackgroundTasks):
     session_id = request.session_id
@@ -372,7 +331,7 @@ async def pause_stream(request: StreamControlRequest):
     stream_state[session_id] = "paused"
     await clear_session_queues(session_id)
     logging.info(f"暂停互联网流，并清空队列数据，session: {session_id}")
-    return {"status": "success", "message": "互联网流已暂停，队列数据已清空"}
+    return {"status": "success", "message": "互联网流已暂停"}
 
 @app.post("/stream/resume")
 async def resume_stream(request: StreamControlRequest):
@@ -391,14 +350,13 @@ async def stop_stream(request: StreamControlRequest):
     stream_state[session_id] = "stopped"
     await clear_session_queues(session_id)
     logging.info(f"停止互联网流，并清空队列数据，session: {session_id}")
-    return {"status": "success", "message": "互联网流已停止，队列数据已清空"}
+    return {"status": "success", "message": "互联网流已停止"}
 
 async def stream_video_reader(session_id: str, stream_url: str):
     loop = asyncio.get_running_loop()
     try:
         cap = await loop.run_in_executor(None, cv2.VideoCapture, stream_url)
-        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
-    except (asyncio.TimeoutError, cv2.error) as e:
+    except Exception as e:
         logging.error(f"打开网络流失败: {stream_url}, session: {session_id}, 错误: {e}")
         return
 
@@ -438,6 +396,49 @@ async def stream_video_reader(session_id: str, stream_url: str):
         frame_id += 1
         await asyncio.sleep(0)
     cap.release()
+
+@app.post("/upload")
+async def upload_video(video: UploadFile = File(...)):
+    video_path = UPLOAD_DIR / video.filename
+    with open(video_path, "wb") as buffer:
+        shutil.copyfileobj(video.file, buffer)
+    return {"status": "success", "filename": video.filename}
+
+@app.post("/analyze")
+async def analyze_video(request: AnalyzeRequest):
+    session_id = request.session_id
+    object_str = request.object_str
+    filename = request.filename
+    video_path = UPLOAD_DIR / filename
+    if not video_path.exists():
+        return {"status": "error", "message": "视频文件不存在"}
+
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        return {"status": "error", "message": "无法打开视频文件"}
+
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    if fps <= 0:
+        fps = ANALYSIS_FPS
+    frame_interval = max(1, fps // ANALYSIS_FPS)
+
+    frame_id, second = 0, 0
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        if frame_id % frame_interval == 0:
+            #resized_frame = cv2.resize(frame, (400, 300))
+            resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)))
+            _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
+            binary_frame = buffer.tobytes()
+            worker_index = (abs(hash(session_id)) % WORKER_COUNT)
+            await worker_queues[worker_index].put((session_id, frame_id, binary_frame, object_str, second, "file"))
+        frame_id += 1
+        second = frame_id // fps
+    cap.release()
+    os.remove(video_path)
+    return {"status": "processing", "message": "视频分析中..."}
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):

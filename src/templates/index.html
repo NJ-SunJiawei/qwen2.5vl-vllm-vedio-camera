@@ -2,38 +2,48 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>Qwen2.5-VL AI智能识别 - 多用户支持</title>
+  <title>Qwen2.5-VL AI智能识别</title>
+  <!-- TailwindCSS，可自行替换CDN或本地文件 -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
   <style>
     body {
       background: linear-gradient(135deg, #ece9e6, #ffffff);
       font-family: 'Helvetica Neue', Arial, sans-serif;
     }
+    /* 左侧菜单与左右布局 */
     .container {
-      max-width: 1200px;
-      margin: 0 auto;
+      display: flex;
+      min-height: 100vh;
+    }
+    .sidebar {
+      width: 200px;
+      background-color: #f3f4f6;
+      padding: 20px;
+      border-right: 1px solid #ddd;
+    }
+    .sidebar ul {
+      list-style: none;
+      padding: 0;
+    }
+    .sidebar li {
+      margin-bottom: 20px;
+    }
+    .sidebar a {
+      display: block;
+      padding: 10px 15px;
+      color: #333;
+      border-radius: 4px;
+      text-decoration: none;
+    }
+    .sidebar a.active {
+      background-color: #3b82f6;
+      color: #fff;
+    }
+    .content {
+      flex: 1;
       padding: 20px;
     }
-    .tab-buttons button {
-      padding: 10px 20px;
-      margin-right: 10px;
-      border: none;
-      cursor: pointer;
-    }
-    .active-tab {
-      background-color: #3b82f6;
-      color: white;
-    }
-    .inactive-tab {
-      background-color: #e5e7eb;
-      color: #333;
-    }
-    .section {
-      display: none;
-    }
-    .section.active {
-      display: block;
-    }
+    /* 视频容器样式 */
     .video-container {
       background-color: black;
       position: relative;
@@ -52,8 +62,7 @@
     }
     canvas {
       display: block;
-      width: 100%;
-      height: auto;
+      /* 对于本地视频，这里可能动态调整 canvas 大小 */
     }
     .fps-display {
       position: absolute;
@@ -128,6 +137,58 @@
       font-size: 14px;
       color: #333;
     }
+    /* 卡片式（多路互联网流）样式 */
+    .card-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 20px;
+    }
+    .stream-card {
+      background: #fff;
+      border-radius: 6px;
+      padding: 16px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      position: relative;
+    }
+    .card-status {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #fff;
+    }
+    .status-live {
+      background: #e53e3e;
+    }
+    .status-offline {
+      background: #718096;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .card-input {
+      margin-bottom: 4px;
+    }
+    .btn-group button {
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+    .card-fps {
+      position: absolute;
+      top: 0;
+      left: 0;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 10;
+    }
+    /* 图片预览Modal */
     #imageModal {
       position: fixed;
       inset: 0;
@@ -164,308 +225,114 @@
     }
   </style>
 </head>
-<body class="p-6">
+<body>
   <div class="container">
-    <h1 class="text-3xl font-bold text-center mb-6">Qwen2.5-VL AI智能识别 - 多用户演示</h1>
-    
-    <script>
-      let session_id = sessionStorage.getItem("session_id");
-      if (!session_id) {
-        session_id = Date.now().toString(36) + Math.random().toString(36).substring(2);
-        sessionStorage.setItem("session_id", session_id);
-      }
-      console.log("session_id:", session_id);
-    </script>
-    
-    <!-- 标签切换 -->
-    <div class="tab-buttons mb-4">
-      <button id="tabFile" class="active-tab">本地视频</button>
-      <button id="tabStream" class="inactive-tab">互联网流</button>
+    <!-- 左侧菜单 -->
+    <div class="sidebar">
+      <ul>
+        <li><a href="#" id="menuFile" class="active">本地视频</a></li>
+        <li><a href="#" id="menuStream">多路互联网流</a></li>
+      </ul>
     </div>
-    
-    <!-- 本地视频模式 -->
-    <div id="sectionFile" class="section active">
-      <form id="fileUploadForm" class="mb-4">
-        <input type="file" id="videoInput" accept="video/*" class="border p-2 rounded">
-        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded ml-2">上传视频</button>
-        <div id="progressContainer">
-          <div id="progressBar"></div>
-          <span id="progressText">0%</span>
+    <!-- 右侧内容区域 -->
+    <div class="content">
+      <!-- 本地视频区 -->
+      <div id="sectionFile">
+        <form id="fileUploadForm" class="mb-4">
+          <input type="file" id="videoInput" accept="video/*" class="border p-2 rounded">
+          <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded ml-2">上传视频</button>
+          <div id="progressContainer">
+            <div id="progressBar"></div>
+            <span id="progressText">0%</span>
+          </div>
+        </form>
+        <div id="fileAnalyzeSection" class="mb-4 hidden">
+          <input type="text" id="fileObjectInput" placeholder="输入要检测的对象（多个用逗号分隔）" class="border p-2 rounded">
+          <button id="fileAnalyzeButton" class="bg-green-500 text-white px-4 py-2 rounded ml-2">开始识别</button>
         </div>
-      </form>
-      <div id="fileAnalyzeSection" class="mb-4 hidden">
-        <input type="text" id="fileObjectInput" placeholder="输入要检测的对象（多个用逗号分隔）" class="border p-2 rounded">
-        <button id="fileAnalyzeButton" class="bg-green-500 text-white px-4 py-2 rounded ml-2">开始识别</button>
-      </div>
-      <div class="video-container mb-4" id="fileVideoContainer">
-        <button id="fileFullScreenButton" class="fullscreen-btn">全屏</button>
-        <div class="fps-display" id="fileFpsDisplay">FPS: 0</div>
-        <div class="canvas-wrapper">
-          <canvas id="fileVideoCanvas"></canvas>
-          <canvas id="fileOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+        <div class="video-container mb-4" id="fileVideoContainer">
+          <button id="fileFullScreenButton" class="fullscreen-btn">全屏</button>
+          <div class="fps-display" id="fileFpsDisplay">FPS: 0</div>
+          <div class="canvas-wrapper">
+            <canvas id="fileVideoCanvas"></canvas>
+            <canvas id="fileOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+          </div>
         </div>
+        <div class="thumbnail-container" id="fileThumbnailContainer"></div>
       </div>
-      <div class="thumbnail-container" id="fileThumbnailContainer"></div>
-    </div>
-    
-    <!-- 互联网流模式 -->
-    <div id="sectionStream" class="section">
-      <form id="streamCombinedForm" class="mb-4">
-        <input type="text" id="streamObjectInput" placeholder="请输入检测对象（多个用逗号分隔）" class="border p-2 rounded mr-2">
-        <input type="text" id="streamUrlInput" placeholder="请输入流地址" class="border p-2 rounded w-1/2 mr-2">
-        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">开始拉流</button>
-      </form>
-      <div id="streamControlButtons" class="mb-4">
-        <button id="pauseStreamButton" class="bg-yellow-500 text-white px-4 py-2 rounded mr-2">暂停流</button>
-        <button id="resumeStreamButton" class="bg-green-500 text-white px-4 py-2 rounded mr-2">恢复流</button>
-        <button id="stopStreamButton" class="bg-red-500 text-white px-4 py-2 rounded">停止流</button>
-      </div>
-      <div class="video-container mb-4" id="streamVideoContainer">
-        <button id="streamFullScreenButton" class="fullscreen-btn">全屏</button>
-        <div class="fps-display" id="streamFpsDisplay">FPS: 0</div>
-        <div class="canvas-wrapper">
-          <canvas id="streamVideoCanvas"></canvas>
-          <canvas id="streamOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+      <!-- 多路互联网流区 -->
+      <div id="sectionStream" class="hidden">
+        <div class="mb-4">
+          <button id="addChannelBtn" class="bg-blue-500 text-white px-4 py-2 rounded">新增通道卡片</button>
+        </div>
+        <div class="card-container" id="multiStreamContainer">
+          <!-- 动态插入卡片 -->
         </div>
       </div>
-      <div class="thumbnail-container" id="streamThumbnailContainer"></div>
-    </div>
-    
-    <div id="imageModal" class="hidden">
-      <div id="modalPrev" class="modal-nav">&#9664;</div>
-      <img id="modalImage" src="">
-      <div id="modalNext" class="modal-nav">&#9654;</div>
     </div>
   </div>
-  
+  <!-- 图片预览Modal -->
+  <div id="imageModal" class="hidden">
+    <div id="modalPrev" class="modal-nav">&#9664;</div>
+    <img id="modalImage" src="">
+    <div id="modalNext" class="modal-nav">&#9654;</div>
+  </div>
   <script>
-    // 全局变量
-    let fileThumbnailList = [];
-    let streamThumbnailList = [];
-    let currentModalList = [];
-    let currentModalIndex = 0;
-    let fileOriginalWidth = 0, fileOriginalHeight = 0;
-    let streamOriginalWidth = 0, streamOriginalHeight = 0;
-
-    // FPS 变量
-    let fileFrameCount = 0, fileLastFpsTime = Date.now(), fileCurrentFPS = 0;
-    let streamFrameCount = 0, streamLastFpsTime = Date.now(), streamCurrentFPS = 0;
-    
-    function updateThumbnailIndices(containerId) {
-      const container = document.getElementById(containerId);
-      Array.from(container.children).forEach((child, index) => {
-        const img = child.querySelector('img');
-        if (img) {
-          img.dataset.index = index;
-        }
-      });
-    }
-    
-    // ---------------------------
-    // 标签切换逻辑
-    const tabFile = document.getElementById('tabFile');
-    const tabStream = document.getElementById('tabStream');
+    // ========== 菜单切换 ==========
+    const menuFile = document.getElementById('menuFile');
+    const menuStream = document.getElementById('menuStream');
     const sectionFile = document.getElementById('sectionFile');
     const sectionStream = document.getElementById('sectionStream');
-    
-    tabFile.addEventListener('click', () => {
-      tabFile.classList.add('active-tab');
-      tabFile.classList.remove('inactive-tab');
-      tabStream.classList.add('inactive-tab');
-      tabStream.classList.remove('active-tab');
-      sectionFile.classList.add('active');
-      sectionStream.classList.remove('active');
+
+    menuFile.addEventListener('click', (e) => {
+      e.preventDefault();
+      menuFile.classList.add('active');
+      menuStream.classList.remove('active');
+      sectionFile.classList.remove('hidden');
+      sectionStream.classList.add('hidden');
     });
-    
-    tabStream.addEventListener('click', () => {
-      tabStream.classList.add('active-tab');
-      tabStream.classList.remove('inactive-tab');
-      tabFile.classList.add('inactive-tab');
-      tabFile.classList.remove('active-tab');
-      sectionStream.classList.add('active');
-      sectionFile.classList.remove('active');
+    menuStream.addEventListener('click', (e) => {
+      e.preventDefault();
+      menuStream.classList.add('active');
+      menuFile.classList.remove('active');
+      sectionStream.classList.remove('hidden');
+      sectionFile.classList.add('hidden');
     });
-    
-    // 异步将 Base64 转为 Blob，避免主线程阻塞
-    function base64ToBlob(base64Data, contentType = 'image/jpeg') {
-      const dataUrl = "data:" + contentType + ";base64," + base64Data;
-      return fetch(dataUrl).then(r => r.blob());
-    }
-    
-    // 绘制图片函数：根据 Blob 数据绘制到 canvas 上
-    function drawImageOnCanvas(blob, canvas, overlayCanvas, type) {
-      createImageBitmap(blob).then(imgBitmap => {
-        if(type === 'file' && fileOriginalWidth === 0){
-          fileOriginalWidth = imgBitmap.width;
-          fileOriginalHeight = imgBitmap.height;
-        } else if(type === 'stream' && streamOriginalWidth === 0){
-          streamOriginalWidth = imgBitmap.width;
-          streamOriginalHeight = imgBitmap.height;
-        }
-        if(canvas.width !== imgBitmap.width || canvas.height !== imgBitmap.height){
-          canvas.width = imgBitmap.width;
-          canvas.height = imgBitmap.height;
-          overlayCanvas.width = imgBitmap.width;
-          overlayCanvas.height = imgBitmap.height;
-        }
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(imgBitmap, 0, 0);
-      }).catch(err => console.error("createImageBitmap error:", err));
-    }
-    
-    // ---------------------------
-    // 【本地视频模式】WebSocket 处理
-    let fileWs = new WebSocket(`ws://${window.location.host}/ws?session_id=${session_id}`);
+
+    // ========== 本地视频逻辑 ==========
+    let fileWs = new WebSocket(`ws://${window.location.host}/ws?session_id=${Date.now()}`);
+    let fileFrameCount = 0, fileLastFpsTime = Date.now(), fileCurrentFPS = 0;
+    let fileOriginalWidth = 0, fileOriginalHeight = 0;
+
     fileWs.onmessage = async (event) => {
       let message;
-      if(typeof event.data === "string"){
-         message = JSON.parse(event.data);
+      if (typeof event.data === "string") {
+        message = JSON.parse(event.data);
       } else if (event.data instanceof Blob) {
-         const text = await event.data.text();
-         message = JSON.parse(text);
+        const text = await event.data.text();
+        message = JSON.parse(text);
       }
-      // 更新 FPS 计数并打印日志
       fileFrameCount++;
-      if(Date.now() - fileLastFpsTime >= 1000){
-         fileCurrentFPS = fileFrameCount;
-         fileFrameCount = 0;
-         fileLastFpsTime = Date.now();
-         document.getElementById('fileFpsDisplay').innerText = `FPS: ${fileCurrentFPS}`;
-         console.log("File FPS:", fileCurrentFPS);
+      if (Date.now() - fileLastFpsTime >= 1000) {
+        fileCurrentFPS = fileFrameCount;
+        fileFrameCount = 0;
+        fileLastFpsTime = Date.now();
+        document.getElementById('fileFpsDisplay').innerText = `FPS: ${fileCurrentFPS}`;
       }
-      if(message.image){
-         base64ToBlob(message.image).then(blob => {
-            const fileVideoCanvas = document.getElementById('fileVideoCanvas');
-            const fileOverlayCanvas = document.getElementById('fileOverlayCanvas');
-            drawImageOnCanvas(blob, fileVideoCanvas, fileOverlayCanvas, 'file');
-         });
+      if (message.image) {
+        base64ToBlob(message.image).then(blob => {
+          const fileVideoCanvas = document.getElementById('fileVideoCanvas');
+          const fileOverlayCanvas = document.getElementById('fileOverlayCanvas');
+          drawImageOnCanvas(blob, fileVideoCanvas, fileOverlayCanvas, 'file');
+        });
       }
-      // 当检测结果中有 bbox 数据时保存缩略图
-      if(message.result && message.result.bboxes && message.result.bboxes.length > 0){
-         window.fileLastDetection = message.result;
-         window.fileDetectionTimestamp = Date.now();
-         addFileThumbnail();
+      if (message.result && message.result.bboxes && message.result.bboxes.length > 0) {
+        window.fileLastDetection = message.result;
+        window.fileDetectionTimestamp = Date.now();
+        addFileThumbnail();
       }
     };
-    
-    // ---------------------------
-    // 【互联网流模式】WebSocket 处理
-    let streamWs = new WebSocket(`ws://${window.location.host}/ws/stream?session_id=${session_id}`);
-    streamWs.onmessage = async (event) => {
-      let message;
-      if(typeof event.data === "string"){
-         message = JSON.parse(event.data);
-      } else if (event.data instanceof Blob) {
-         const text = await event.data.text();
-         message = JSON.parse(text);
-      }
-      streamFrameCount++;
-      if(Date.now() - streamLastFpsTime >= 1000){
-         streamCurrentFPS = streamFrameCount;
-         streamFrameCount = 0;
-         streamLastFpsTime = Date.now();
-         document.getElementById('streamFpsDisplay').innerText = `FPS: ${streamCurrentFPS}`;
-         console.log("Stream FPS:", streamCurrentFPS);
-      }
-      if(message.image){
-         base64ToBlob(message.image).then(blob => {
-            const streamVideoCanvas = document.getElementById('streamVideoCanvas');
-            const streamOverlayCanvas = document.getElementById('streamOverlayCanvas');
-            drawImageOnCanvas(blob, streamVideoCanvas, streamOverlayCanvas, 'stream');
-         });
-      }
-      if(message.result && message.result.bboxes && message.result.bboxes.length > 0){
-         window.streamLastDetection = message.result;
-         window.streamDetectionTimestamp = Date.now();
-         addStreamThumbnail();
-      }
-    };
-    
-    // ---------------------------
-    // 使用 requestAnimationFrame 与节流更新 overlay（本地视频）
-    let lastFileOverlayUpdate = 0;
-    function updateFileOverlay() {
-      const now = Date.now();
-      if (now - lastFileOverlayUpdate < 150) {
-        requestAnimationFrame(updateFileOverlay);
-        return;
-      }
-      lastFileOverlayUpdate = now;
-      const overlayCanvas = document.getElementById('fileOverlayCanvas');
-      const ctx = overlayCanvas.getContext('2d');
-      ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-      
-      if(window.fileLastDetection && fileOriginalWidth){
-        // 如果2秒内无新数据，则清空检测数据
-        if(Date.now() - window.fileDetectionTimestamp > 2000){
-          window.fileLastDetection = null;
-        } else {
-          const rect = overlayCanvas.getBoundingClientRect();
-          const scaleX = rect.width / fileOriginalWidth;
-          const scaleY = rect.height / fileOriginalHeight;
-          window.fileLastDetection.bboxes.forEach(det => {
-            // 判断 bbox_2d 是否存在且有效
-            if (!det.bbox_2d || !Array.isArray(det.bbox_2d) || det.bbox_2d.length < 4) {
-              console.warn("Invalid bbox_2d:", det);
-              return;
-            }
-            const [x1, y1, x2, y2] = det.bbox_2d;
-            ctx.strokeStyle = "lime";
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x1 * scaleX, y1 * scaleY, (x2 - x1) * scaleX, (y2 - y1) * scaleY);
-            ctx.font = "14px Arial";
-            ctx.fillStyle = "lime";
-            ctx.fillText(det.label, x1 * scaleX, (y1 * scaleY) - 5);
-            console.log("File Detection - bbox:", det.bbox_2d, "label:", det.label);
-          });
-        }
-      }
-      requestAnimationFrame(updateFileOverlay);
-    }
-    updateFileOverlay();
-    
-    // 使用 requestAnimationFrame 与节流更新 overlay（互联网流）
-    let lastStreamOverlayUpdate = 0;
-    function updateStreamOverlay() {
-      const now = Date.now();
-      if (now - lastStreamOverlayUpdate < 150) {
-        requestAnimationFrame(updateStreamOverlay);
-        return;
-      }
-      lastStreamOverlayUpdate = now;
-      const overlayCanvas = document.getElementById('streamOverlayCanvas');
-      const ctx = overlayCanvas.getContext('2d');
-      ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-      
-      if(window.streamLastDetection && streamOriginalWidth){
-        if(Date.now() - window.streamDetectionTimestamp > 2000){
-          window.streamLastDetection = null;
-        } else {
-          const rect = overlayCanvas.getBoundingClientRect();
-          const scaleX = rect.width / streamOriginalWidth;
-          const scaleY = rect.height / streamOriginalHeight;
-          window.streamLastDetection.bboxes.forEach(det => {
-            if (!det.bbox_2d || !Array.isArray(det.bbox_2d) || det.bbox_2d.length < 4) {
-              console.warn("Invalid bbox_2d:", det);
-              return;
-            }
-            const [x1, y1, x2, y2] = det.bbox_2d;
-            ctx.strokeStyle = "lime";
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x1 * scaleX, y1 * scaleY, (x2 - x1) * scaleX, (y2 - y1) * scaleY);
-            ctx.font = "14px Arial";
-            ctx.fillStyle = "lime";
-            ctx.fillText(det.label, x1 * scaleX, (y1 * scaleY) - 5);
-            console.log("Stream Detection - bbox:", det.bbox_2d, "label:", det.label);
-          });
-        }
-      }
-      requestAnimationFrame(updateStreamOverlay);
-    }
-    updateStreamOverlay();
-    
-    // ---------------------------
-    // 上传视频逻辑
+
     document.getElementById('fileUploadForm').addEventListener('submit', (e) => {
       e.preventDefault();
       const fileInput = document.getElementById('videoInput');
@@ -487,24 +354,19 @@
       };
       xhr.onload = function () {
         if (xhr.status === 200) {
-          console.log("视频上传成功");
           const result = JSON.parse(xhr.responseText);
           document.getElementById('fileAnalyzeSection').classList.remove('hidden');
           document.getElementById('fileAnalyzeButton').dataset.filename = result.filename;
         } else {
-          console.error("视频上传错误: " + xhr.statusText);
           alert("上传视频失败，请重试");
         }
       };
       xhr.onerror = function () {
-        console.error("视频上传网络错误");
         alert("上传视频失败，请检查网络");
       };
       xhr.send(formData);
     });
-    
-    // ---------------------------
-    // 本地视频识别启动
+
     document.getElementById('fileAnalyzeButton').addEventListener('click', async () => {
       const objectStr = document.getElementById('fileObjectInput').value;
       if (!objectStr) {
@@ -520,153 +382,60 @@
         const response = await fetch('/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id, object_str: objectStr, filename })
+          body: JSON.stringify({ 
+            session_id: Date.now().toString(), 
+            object_str: objectStr, 
+            filename 
+          })
         });
         if (!response.ok) throw new Error("网络响应异常");
         console.log("本地视频识别已启动");
       } catch (error) {
-        console.error("本地视频识别错误:", error);
         alert("启动识别失败，请重试");
       }
     });
-    
-    // ---------------------------
-    // 互联网流识别与拉流
-    document.getElementById('streamCombinedForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const objectStr = document.getElementById('streamObjectInput').value;
-      const streamUrl = document.getElementById('streamUrlInput').value;
-      if (!objectStr) {
-        alert("请输入检测对象");
+
+    let lastFileOverlayUpdate = 0;
+    function updateFileOverlay() {
+      const now = Date.now();
+      if (now - lastFileOverlayUpdate < 150) {
+        requestAnimationFrame(updateFileOverlay);
         return;
       }
-      if (!streamUrl) {
-        alert("请输入流地址");
-        return;
+      lastFileOverlayUpdate = now;
+      const overlayCanvas = document.getElementById('fileOverlayCanvas');
+      const ctx = overlayCanvas.getContext('2d');
+      ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      
+      if (window.fileLastDetection && fileOriginalWidth) {
+        if (Date.now() - window.fileDetectionTimestamp > 2000) {
+          window.fileLastDetection = null;
+        } else {
+          const rect = overlayCanvas.getBoundingClientRect();
+          const scaleX = rect.width / fileOriginalWidth;
+          const scaleY = rect.height / fileOriginalHeight;
+          window.fileLastDetection.bboxes.forEach(det => {
+            if (!det.bbox_2d || det.bbox_2d.length < 4) return;
+            const [x1, y1, x2, y2] = det.bbox_2d;
+            ctx.strokeStyle = "lime";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x1 * scaleX, y1 * scaleY, (x2 - x1) * scaleX, (y2 - y1) * scaleY);
+            ctx.font = "14px Arial";
+            ctx.fillStyle = "lime";
+            ctx.fillText(det.label, x1 * scaleX, (y1 * scaleY) - 5);
+          });
+        }
       }
-      try {
-        const analyzeResponse = await fetch('/stream/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id, object_str: objectStr })
-        });
-        if (!analyzeResponse.ok) throw new Error("检测目标设置失败");
-        console.log("检测目标设置成功");
-        
-        const streamResponse = await fetch('/stream', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id, stream_url: streamUrl })
-        });
-        if (!streamResponse.ok) throw new Error("拉流启动失败");
-        console.log("互联网流拉流启动成功");
-      } catch (error) {
-        console.error("启动互联网流错误:", error);
-        alert("启动互联网流失败，请重试");
-      }
-    });
-    
-    // ---------------------------
-    // 暂停、恢复、停止互联网流按钮事件
-    document.getElementById('pauseStreamButton').addEventListener('click', async () => {
-      try {
-        const response = await fetch('/stream/pause', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id })
-        });
-        const result = await response.json();
-        console.log("暂停流结果:", result);
-      } catch (error) {
-        console.error("暂停流错误:", error);
-      }
-    });
-    
-    document.getElementById('resumeStreamButton').addEventListener('click', async () => {
-      try {
-        const response = await fetch('/stream/resume', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id })
-        });
-        const result = await response.json();
-        console.log("恢复流结果:", result);
-      } catch (error) {
-        console.error("恢复流错误:", error);
-      }
-    });
-    
-    document.getElementById('stopStreamButton').addEventListener('click', async () => {
-      try {
-        const response = await fetch('/stream/stop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id })
-        });
-        const result = await response.json();
-        console.log("停止流结果:", result);
-      } catch (error) {
-        console.error("停止流错误:", error);
-      }
-    });
-    
-    // ---------------------------
-    // 模态层显示与导航
-    function showModal(thumbnailList, index) {
-      currentModalList = thumbnailList;
-      currentModalIndex = index;
-      const modal = document.getElementById("imageModal");
-      const modalImage = document.getElementById("modalImage");
-      modalImage.src = currentModalList[currentModalIndex];
-      modal.classList.remove("hidden");
+      requestAnimationFrame(updateFileOverlay);
     }
-    
-    document.getElementById("modalPrev").addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (currentModalList.length === 0) return;
-      currentModalIndex = (currentModalIndex - 1 + currentModalList.length) % currentModalList.length;
-      document.getElementById("modalImage").src = currentModalList[currentModalIndex];
-    });
-    
-    document.getElementById("modalNext").addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (currentModalList.length === 0) return;
-      currentModalIndex = (currentModalIndex + 1) % currentModalList.length;
-      document.getElementById("modalImage").src = currentModalList[currentModalIndex];
-    });
-    
-    document.getElementById("imageModal").addEventListener("click", (e) => {
-      if(e.target.classList.contains("modal-nav")) return;
-      document.getElementById("imageModal").classList.add("hidden");
-    });
-    
-    // ---------------------------
-    // 全屏播放功能
-    function toggleFullScreen(containerId) {
-      const container = document.getElementById(containerId);
-      if (!document.fullscreenElement) {
-        container.requestFullscreen().catch(err => {
-          alert(`全屏错误: ${err.message}`);
-        });
-      } else {
-        document.exitFullscreen();
-      }
-    }
-    
+    updateFileOverlay();
+
     document.getElementById("fileFullScreenButton").addEventListener("click", (e) => {
       e.stopPropagation();
       toggleFullScreen("fileVideoContainer");
     });
-    
-    document.getElementById("streamFullScreenButton").addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleFullScreen("streamVideoContainer");
-    });
-    
-    document.addEventListener("fullscreenchange", () => {});
-    
-    // ---------------------------
-    // 缩略图逻辑：只有检测到 bbox 数据时保存缩略图，并在下方显示 label
+
+    let fileThumbnailList = [];
     function addFileThumbnail() {
       if (!window.fileLastDetection || !window.fileLastDetection.bboxes || window.fileLastDetection.bboxes.length === 0) {
         return;
@@ -694,53 +463,379 @@
       labelDiv.innerText = labelText;
       thumbnailItem.appendChild(labelDiv);
       
-      document.getElementById('fileThumbnailContainer').appendChild(thumbnailItem);
+      const container = document.getElementById('fileThumbnailContainer');
+      container.appendChild(thumbnailItem);
       
       while (fileThumbnailList.length > 6) {
         fileThumbnailList.shift();
-        document.getElementById('fileThumbnailContainer').removeChild(
-          document.getElementById('fileThumbnailContainer').firstChild
-        );
+        container.removeChild(container.firstChild);
       }
-      updateThumbnailIndices('fileThumbnailContainer');
+      updateThumbnailIndices(container);
     }
-    
-    function addStreamThumbnail() {
-      if (!window.streamLastDetection || !window.streamLastDetection.bboxes || window.streamLastDetection.bboxes.length === 0) {
-        return;
-      }
-      const streamVideoCanvas = document.getElementById('streamVideoCanvas');
-      const dataURL = streamVideoCanvas.toDataURL("image/jpeg", 0.5);
-      const labels = window.streamLastDetection.bboxes.map(det => det.label);
-      const uniqueLabels = [...new Set(labels)];
-      const labelText = uniqueLabels.join(", ");
-      
-      const thumbnailItem = document.createElement("div");
-      thumbnailItem.className = "thumbnail-item";
-      
-      const img = document.createElement("img");
-      img.src = dataURL;
-      streamThumbnailList.push(dataURL);
-      img.dataset.index = streamThumbnailList.length - 1;
-      img.addEventListener("click", () => {
-        showModal(streamThumbnailList, parseInt(img.dataset.index));
+
+    function updateThumbnailIndices(container) {
+      Array.from(container.children).forEach((child, index) => {
+        const img = child.querySelector('img');
+        if (img) {
+          img.dataset.index = index;
+        }
       });
-      thumbnailItem.appendChild(img);
-      
-      const labelDiv = document.createElement("div");
-      labelDiv.className = "thumbnail-label";
-      labelDiv.innerText = labelText;
-      thumbnailItem.appendChild(labelDiv);
-      
-      document.getElementById('streamThumbnailContainer').appendChild(thumbnailItem);
-      
-      while (streamThumbnailList.length > 6) {
-        streamThumbnailList.shift();
-        document.getElementById('streamThumbnailContainer').removeChild(
-          document.getElementById('streamThumbnailContainer').firstChild
-        );
+    }
+
+    let currentModalList = [];
+    let currentModalIndex = 0;
+    function showModal(thumbnailList, index) {
+      currentModalList = thumbnailList;
+      currentModalIndex = index;
+      const modal = document.getElementById("imageModal");
+      const modalImage = document.getElementById("modalImage");
+      modalImage.src = currentModalList[currentModalIndex];
+      modal.classList.remove("hidden");
+    }
+
+    document.getElementById("modalPrev").addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (currentModalList.length === 0) return;
+      currentModalIndex = (currentModalIndex - 1 + currentModalList.length) % currentModalList.length;
+      document.getElementById("modalImage").src = currentModalList[currentModalIndex];
+    });
+    
+    document.getElementById("modalNext").addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (currentModalList.length === 0) return;
+      currentModalIndex = (currentModalIndex + 1) % currentModalList.length;
+      document.getElementById("modalImage").src = currentModalList[currentModalIndex];
+    });
+    
+    document.getElementById("imageModal").addEventListener("click", (e) => {
+      if (e.target.classList.contains("modal-nav")) return;
+      document.getElementById("imageModal").classList.add("hidden");
+    });
+
+    // 工具函数
+    function toggleFullScreen(containerId) {
+      const container = document.getElementById(containerId);
+      if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => {
+          alert(`全屏错误: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
       }
-      updateThumbnailIndices('streamThumbnailContainer');
+    }
+
+    function base64ToBlob(base64Data, contentType = 'image/jpeg') {
+      const dataUrl = "data:" + contentType + ";base64," + base64Data;
+      return fetch(dataUrl).then(r => r.blob());
+    }
+
+    function drawImageOnCanvas(blob, canvas, overlayCanvas, type) {
+      createImageBitmap(blob).then(imgBitmap => {
+        if (type === 'file' && fileOriginalWidth === 0) {
+          fileOriginalWidth = imgBitmap.width;
+          fileOriginalHeight = imgBitmap.height;
+        }
+        // 对于本地视频，这里使用图像原尺寸
+        if(canvas.width !== imgBitmap.width || canvas.height !== imgBitmap.height){
+          canvas.width = imgBitmap.width;
+          canvas.height = imgBitmap.height;
+          overlayCanvas.width = imgBitmap.width;
+          overlayCanvas.height = imgBitmap.height;
+        }
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imgBitmap, 0, 0);
+      }).catch(err => console.error("createImageBitmap error:", err));
+    }
+
+    // ========== 多路互联网流相关代码 ==========
+    // 这里固定流卡片的 canvas 尺寸为 400x300，检测框将按比例换算
+    const fixedCanvasW = 400;
+    const fixedCanvasH = 300;
+    let channelCounter = 0;
+    const containerStream = document.getElementById("multiStreamContainer");
+
+    document.getElementById("addChannelBtn").addEventListener("click", () => {
+      addStreamCard();
+    });
+
+    function addStreamCard() {
+      channelCounter++;
+      const sessionId = "stream_session_" + Date.now() + "_" + channelCounter;
+      const cardDiv = document.createElement("div");
+      cardDiv.className = "stream-card";
+      
+      const statusDiv = document.createElement("div");
+      statusDiv.className = "card-status status-offline";
+      statusDiv.innerText = "离线";
+      cardDiv.appendChild(statusDiv);
+
+      const titleEl = document.createElement("div");
+      titleEl.className = "card-title";
+      titleEl.innerText = "通道 " + channelCounter;
+      cardDiv.appendChild(titleEl);
+
+      const addrInput = document.createElement("input");
+      addrInput.className = "card-input border p-2 rounded w-full";
+      addrInput.placeholder = "请输入流地址 (rtsp/rtmp...)";
+      cardDiv.appendChild(addrInput);
+
+      const detectInput = document.createElement("input");
+      detectInput.className = "card-input border p-2 rounded w-full";
+      detectInput.placeholder = "请输入检测目标(多个用逗号)";
+      cardDiv.appendChild(detectInput);
+
+      const btnGroup = document.createElement("div");
+      btnGroup.className = "btn-group mt-2";
+      cardDiv.appendChild(btnGroup);
+
+      const btnStart = document.createElement("button");
+      btnStart.className = "px-3 py-1 bg-blue-500 text-white rounded";
+      btnStart.innerText = "拉流";
+      btnStart.onclick = () => {
+        const url = addrInput.value.trim();
+        if (!url) {
+          alert("请先输入流地址");
+          return;
+        }
+        startStream(sessionId, url, statusDiv);
+      };
+      btnGroup.appendChild(btnStart);
+
+      const btnPause = document.createElement("button");
+      btnPause.className = "px-3 py-1 bg-yellow-500 text-white rounded";
+      btnPause.innerText = "暂停";
+      btnPause.onclick = () => pauseStream(sessionId);
+      btnGroup.appendChild(btnPause);
+
+      const btnResume = document.createElement("button");
+      btnResume.className = "px-3 py-1 bg-green-500 text-white rounded";
+      btnResume.innerText = "恢复";
+      btnResume.onclick = () => resumeStream(sessionId);
+      btnGroup.appendChild(btnResume);
+
+      const btnStop = document.createElement("button");
+      btnStop.className = "px-3 py-1 bg-red-500 text-white rounded";
+      btnStop.innerText = "停止";
+      btnStop.onclick = () => stopStream(sessionId, statusDiv);
+      btnGroup.appendChild(btnStop);
+
+      const btnDetect = document.createElement("button");
+      btnDetect.className = "px-3 py-1 bg-indigo-500 text-white rounded ml-2";
+      btnDetect.innerText = "检测";
+      btnDetect.onclick = () => {
+        const objs = detectInput.value.trim();
+        if (objs) setAnalyze(sessionId, objs);
+      };
+      btnGroup.appendChild(btnDetect);
+
+      const videoWrapper = document.createElement("div");
+      videoWrapper.style.position = "relative";
+      videoWrapper.style.marginTop = "12px";
+      const canvas = document.createElement("canvas");
+      canvas.width = fixedCanvasW;
+      canvas.height = fixedCanvasH;
+      canvas.style.backgroundColor = "#000";
+      canvas.style.display = "block";
+      videoWrapper.appendChild(canvas);
+      const fpsDiv = document.createElement("div");
+      fpsDiv.className = "card-fps";
+      fpsDiv.innerText = "FPS: 0";
+      videoWrapper.appendChild(fpsDiv);
+
+      cardDiv.appendChild(videoWrapper);
+      containerStream.appendChild(cardDiv);
+
+      cardDiv._sessionId = sessionId;
+      cardDiv._statusDiv = statusDiv;
+      cardDiv._canvas = canvas;
+      cardDiv._ctx = canvas.getContext("2d");
+      cardDiv._fpsDisplay = fpsDiv;
+      cardDiv._fpsCount = 0;
+      cardDiv._fpsLastTime = Date.now();
+      cardDiv._currentFPS = 0;
+      cardDiv._lastDetection = null;
+      cardDiv._lastDetectionTimestamp = 0;
+    }
+
+    async function startStream(session_id, stream_url, statusEl) {
+      try {
+        const res = await fetch("/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id, stream_url })
+        });
+        const result = await res.json();
+        console.log("startStream:", result);
+        if (result.status === "success") {
+          createStreamWS(session_id, statusEl);
+        } else {
+          alert(result.message || "启动拉流失败");
+        }
+      } catch (e) {
+        console.error(e);
+        alert("拉流请求失败");
+      }
+    }
+
+    async function pauseStream(session_id) {
+      try {
+        const res = await fetch("/stream/pause", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id })
+        });
+        const r = await res.json();
+        console.log("pauseStream:", r);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function resumeStream(session_id) {
+      try {
+        const res = await fetch("/stream/resume", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id })
+        });
+        const r = await res.json();
+        console.log("resumeStream:", r);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function stopStream(session_id, statusEl) {
+      try {
+        const res = await fetch("/stream/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id })
+        });
+        const r = await res.json();
+        console.log("stopStream:", r);
+        statusEl.innerText = "离线";
+        statusEl.classList.remove("status-live");
+        statusEl.classList.add("status-offline");
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function setAnalyze(session_id, object_str) {
+      try {
+        const res = await fetch("/stream/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id, object_str })
+        });
+        const r = await res.json();
+        console.log("setAnalyze:", r);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function createStreamWS(session_id, statusEl) {
+      const wsProto = (location.protocol === "https:") ? "wss:" : "ws:";
+      const wsUrl = `${wsProto}//${window.location.host}/ws/stream?session_id=${session_id}`;
+      const ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        console.log("WebSocket connected for session:", session_id);
+        statusEl.innerText = "Live";
+        statusEl.classList.remove("status-offline");
+        statusEl.classList.add("status-live");
+      };
+      ws.onmessage = async (evt) => {
+        let msg;
+        if (typeof evt.data === "string") {
+          msg = JSON.parse(evt.data);
+        } else {
+          const text = await evt.data.text();
+          msg = JSON.parse(text);
+        }
+        if (msg.image) {
+          const blob = await base64ToBlob(msg.image);
+          const card = findCardBySession(session_id);
+          if (card) {
+            card._fpsCount++;
+            const now = Date.now();
+            if (now - card._fpsLastTime >= 1000) {
+              card._currentFPS = card._fpsCount;
+              card._fpsCount = 0;
+              card._fpsLastTime = now;
+              if (card._fpsDisplay) {
+                card._fpsDisplay.innerText = "FPS: " + card._currentFPS;
+              }
+            }
+            // 保存最新检测结果及时间戳
+            if (msg.result && msg.result.bboxes && msg.result.bboxes.length > 0) {
+              card._lastDetection = msg.result;
+              card._lastDetectionTimestamp = Date.now();
+              console.log("Stream detection received for session", session_id, msg.result.bboxes);
+            }
+            // 绘制图像与检测框（参考本地视频比例计算）
+            drawStreamFrame(card, blob, card._lastDetection);
+          }
+        }
+      };
+      ws.onclose = () => {
+        console.log("WebSocket closed for session:", session_id);
+      };
+      ws.onerror = (err) => {
+        console.error("WebSocket error:", err);
+      };
+      // 保存 WebSocket 对象（可选）
+      stream_sessions[session_id] = ws;
+    }
+
+    function findCardBySession(session_id) {
+      const cards = containerStream.querySelectorAll(".stream-card");
+      for (const c of cards) {
+        if (c._sessionId === session_id) return c;
+      }
+      return null;
+    }
+
+    // 绘制互联网流卡片：采用固定 canvas 尺寸（400x300），并对检测框坐标按比例换算
+    function drawStreamFrame(card, blob, detection) {
+      createImageBitmap(blob).then((bitmap) => {
+        // 原始图像尺寸
+        const imgW = bitmap.width;
+        const imgH = bitmap.height;
+        // 固定 canvas 尺寸
+        const canvasW = card._canvas.width;
+        const canvasH = card._canvas.height;
+        const scaleX = canvasW / imgW;
+        const scaleY = canvasH / imgH;
+
+        card._ctx.clearRect(0, 0, canvasW, canvasH);
+        // 绘制图像，自动缩放到固定尺寸
+        card._ctx.drawImage(bitmap, 0, 0, canvasW, canvasH);
+
+        // 如果检测结果存在且在 2000ms 内更新，则绘制检测框
+        if (detection && detection.bboxes && detection.bboxes.length > 0) {
+          if (Date.now() - card._lastDetectionTimestamp > 2000) {
+            detection = null;
+          } else {
+            detection.bboxes.forEach(det => {
+              if (!det.bbox_2d || det.bbox_2d.length < 4) return;
+              const [x1, y1, x2, y2] = det.bbox_2d;
+              const boxX = x1 * scaleX;
+              const boxY = y1 * scaleY;
+              const boxW = (x2 - x1) * scaleX;
+              const boxH = (y2 - y1) * scaleY;
+              card._ctx.strokeStyle = "lime";
+              card._ctx.lineWidth = 2;
+              card._ctx.font = "14px Arial";
+              card._ctx.fillStyle = "lime";
+              card._ctx.strokeRect(boxX, boxY, boxW, boxH);
+              card._ctx.fillText(det.label, boxX, boxY - 5);
+              console.log("Detection bbox:", det.bbox_2d, "label:", det.label);
+            });
+          }
+        }
+      }).catch(err => console.error("Error drawing stream frame:", err));
     }
   </script>
 </body>
