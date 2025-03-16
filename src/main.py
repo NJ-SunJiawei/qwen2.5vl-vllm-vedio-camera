@@ -16,8 +16,12 @@ from fastapi import FastAPI, WebSocket, UploadFile, File, Request, BackgroundTas
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+# 请确保 openai 模块已正确安装和配置
 from openai import OpenAI
 
+# --------------------
+# 日志配置：支持不同级别的日志打印
+# --------------------
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -25,37 +29,50 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 # --------------------
-# 宏开关和基本参数
+# 宏开关设置
 # --------------------
+# True：在 worker 中直接发送结果（send_result 限制 FPS，不通过独立发送队列）
+# False：使用原先的发送队列模式，通过独立的发送任务完成发送
 DIRECT_SEND_MODE = False
+# --------------------
+# 配置及全局变量
+# --------------------
 WORKER_COUNT = 8             # 处理帧的工作线程数量
-SEND_WORKER_COUNT = 8        # 发送任务的工作线程数量
+SEND_WORKER_COUNT = 8        # 发送任务的工作线程数量（仅在 DIRECT_SEND_MODE=False 时使用）
 OPENAI_WORKER_COUNT = 10     # 调用大模型线程池数量
 TARGET_FPS = 20              # 发送帧率
-ANALYSIS_FPS = 5             # 分析帧率
+ANALYSIS_FPS = 10            # 分析帧率
 FRAME_SKIP = 200             # 基础跳帧数
 
 client = OpenAI(
     base_url="http://124.220.202.52:8000/v1",  # 示例地址
     api_key="EMPTY",
-    max_retries=0
+    max_retries=0  # 只重试 0 次
 )
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+# 全局工作队列，每个工作线程对应一个 asyncio.Queue
 worker_queues = [asyncio.Queue() for _ in range(WORKER_COUNT)]
+# 增加线程池的最大线程数，便于处理更多并发任务
 thread_executor = ThreadPoolExecutor(max_workers=OPENAI_WORKER_COUNT)
 
+# 仅在 DIRECT_SEND_MODE=False 时启用发送队列与独立发送任务
 file_send_queues = [asyncio.Queue() for _ in range(SEND_WORKER_COUNT)]
 stream_send_queues = [asyncio.Queue() for _ in range(SEND_WORKER_COUNT)]
 
+# 多用户会话管理（session_id 映射到 WebSocket 连接）
 file_sessions = {}    # 本地视频会话
 stream_sessions = {}  # 互联网流会话
 
-stream_detection = {}  # session_id -> 检测目标字符串
-stream_state = {}      # session_id -> 状态 "running" / "paused" / "stopped"
+# 针对互联网流，每个 session 可能有不同的检测目标
+stream_detection = {}  # 键：session_id，值：检测目标字符串
 
+# 新增：为每个互联网流会话设置状态，状态可为 "running"、"paused"、"stopped"
+stream_state = {}      # 键：session_id，值：状态字符串
+
+# 为防止并发调用 OpenAI API 导致连接错误，增加全局信号量，限制同时并发调用数量
 analysis_semaphore = threading.Semaphore(5)
 direct_send_locks = {}
 direct_send_last_time = {}
@@ -93,6 +110,7 @@ async def analyze_frame(session_id: str, frame_id: int, frame_np: bytes, object_
     [{{"bbox_2d": [x1, y1, x2, y2], "label": "object_label"}}, ...]
     If none found, return an empty list.
     """
+    logging.debug(f"Sending request to OpenAI, session: {session_id}, frame: {frame_id}")
     try:
         response = await asyncio.to_thread(
             client.chat.completions.create,
@@ -119,6 +137,7 @@ async def analyze_frame(session_id: str, frame_id: int, frame_np: bytes, object_
         return {"bboxes": []}
 
 def process_frame_wrapper(session_id, frame_id, frame_np, object_str):
+    # 增加重试机制，最多重试 1 次
     for attempt in range(1):
         try:
             with analysis_semaphore:
@@ -186,6 +205,7 @@ async def send_stream_results_worker(worker_index: int):
         sleep_time = max(0, interval - processing_time)
         await asyncio.sleep(sleep_time)
 
+# 清除指定 session 的所有队列数据
 async def clear_session_queues(session_id: str):
     for q in worker_queues:
         new_deque = collections.deque(item for item in q._queue if item[0] != session_id)
@@ -225,7 +245,7 @@ async def worker_task(worker_id: int, queue: asyncio.Queue):
             else:
                 send_worker_index = (abs(hash(session_id)) % SEND_WORKER_COUNT)
                 await stream_send_queues[send_worker_index].put((session_id, binary_frame, result))
-
+        logging.debug(f"Worker {worker_id}: Processed frame {frame_id} for session {session_id}. Queue size: {queue.qsize()}")
         queue.task_done()
 
 @app.on_event("startup")
@@ -399,20 +419,21 @@ async def stream_video_reader(session_id: str, stream_url: str):
 
 @app.post("/upload")
 async def upload_video(video: UploadFile = File(...)):
+    logging.info("视频上传，保存中...")
     video_path = UPLOAD_DIR / video.filename
     with open(video_path, "wb") as buffer:
         shutil.copyfileobj(video.file, buffer)
-    return {"status": "success", "filename": video.filename}
+    return {"status": "success", "message": "视频上传成功", "filename": video.filename}
 
 @app.post("/analyze")
 async def analyze_video(request: AnalyzeRequest):
     session_id = request.session_id
     object_str = request.object_str
     filename = request.filename
+    logging.info(f"开始分析本地视频，session: {session_id}, 目标对象: {object_str}")
     video_path = UPLOAD_DIR / filename
     if not video_path.exists():
         return {"status": "error", "message": "视频文件不存在"}
-
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         return {"status": "error", "message": "无法打开视频文件"}
@@ -421,6 +442,7 @@ async def analyze_video(request: AnalyzeRequest):
     if fps <= 0:
         fps = ANALYSIS_FPS
     frame_interval = max(1, fps // ANALYSIS_FPS)
+    logging.info(f"原始fps: {fps}, 目标fps: {ANALYSIS_FPS}")
 
     frame_id, second = 0, 0
     while cap.isOpened():
@@ -428,12 +450,12 @@ async def analyze_video(request: AnalyzeRequest):
         if not ret:
             break
         if frame_id % frame_interval == 0:
-            #resized_frame = cv2.resize(frame, (400, 300))
             resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)))
             _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
             binary_frame = buffer.tobytes()
-            worker_index = (abs(hash(session_id)) % WORKER_COUNT)
+            worker_index = hash(session_id) % WORKER_COUNT
             await worker_queues[worker_index].put((session_id, frame_id, binary_frame, object_str, second, "file"))
+            logging.info(f"Frame {frame_id} added to worker {worker_index} queue for session {session_id}")
         frame_id += 1
         second = frame_id // fps
     cap.release()

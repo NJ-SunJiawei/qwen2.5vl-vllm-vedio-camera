@@ -62,7 +62,6 @@
     }
     canvas {
       display: block;
-      /* 对于本地视频，这里可能动态调整 canvas 大小 */
     }
     .fps-display {
       position: absolute;
@@ -254,8 +253,9 @@
           <button id="fileFullScreenButton" class="fullscreen-btn">全屏</button>
           <div class="fps-display" id="fileFpsDisplay">FPS: 0</div>
           <div class="canvas-wrapper">
-            <canvas id="fileVideoCanvas"></canvas>
-            <canvas id="fileOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+            <!-- 本地视频画布固定为640x480 -->
+            <canvas id="fileVideoCanvas" width="640" height="480"></canvas>
+            <canvas id="fileOverlayCanvas" width="640" height="480" class="absolute top-0 left-0 pointer-events-none"></canvas>
           </div>
         </div>
         <div class="thumbnail-container" id="fileThumbnailContainer"></div>
@@ -300,39 +300,100 @@
     });
 
     // ========== 本地视频逻辑 ==========
-    let fileWs = new WebSocket(`ws://${window.location.host}/ws?session_id=${Date.now()}`);
-    let fileFrameCount = 0, fileLastFpsTime = Date.now(), fileCurrentFPS = 0;
-    let fileOriginalWidth = 0, fileOriginalHeight = 0;
+    let local_ws;
+    let localFPSCount = 0, localFPSLastTime = Date.now(), localCurrentFPS = 0;
+    let local_lastDetection = null, local_lastDetectionTimestamp = 0;
 
-    fileWs.onmessage = async (event) => {
-      let message;
-      if (typeof event.data === "string") {
-        message = JSON.parse(event.data);
-      } else if (event.data instanceof Blob) {
-        const text = await event.data.text();
-        message = JSON.parse(text);
-      }
-      fileFrameCount++;
-      if (Date.now() - fileLastFpsTime >= 1000) {
-        fileCurrentFPS = fileFrameCount;
-        fileFrameCount = 0;
-        fileLastFpsTime = Date.now();
-        document.getElementById('fileFpsDisplay').innerText = `FPS: ${fileCurrentFPS}`;
-      }
-      if (message.image) {
-        base64ToBlob(message.image).then(blob => {
-          const fileVideoCanvas = document.getElementById('fileVideoCanvas');
-          const fileOverlayCanvas = document.getElementById('fileOverlayCanvas');
-          drawImageOnCanvas(blob, fileVideoCanvas, fileOverlayCanvas, 'file');
-        });
-      }
-      if (message.result && message.result.bboxes && message.result.bboxes.length > 0) {
-        window.fileLastDetection = message.result;
-        window.fileDetectionTimestamp = Date.now();
-        addFileThumbnail();
-      }
-    };
+    // 使用 createLocalWS 函数建立本地视频 WebSocket 连接，参考 createStreamWS 的写法
+    function createLocalWS() {
+      const wsUrl = `ws://${window.location.host}/ws?session_id=${Date.now()}`;
+      const ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        console.log("Local video WebSocket connected, session_id:", wsUrl);
+      };
+      ws.onmessage = async (evt) => {
+        let msg;
+        if (typeof evt.data === "string") {
+          msg = JSON.parse(evt.data);
+        } else {
+          const text = await evt.data.text();
+          msg = JSON.parse(text);
+        }
+        localFPSCount++;
+        if (Date.now() - localFPSLastTime >= 1000) {
+          localCurrentFPS = localFPSCount;
+          localFPSCount = 0;
+          localFPSLastTime = Date.now();
+          document.getElementById("fileFpsDisplay").innerText = "FPS: " + localCurrentFPS;
+        }
+        if (msg.image) {
+          const blob = await base64ToBlob(msg.image);
+          if (msg.result && msg.result.bboxes && msg.result.bboxes.length > 0) {
+            local_lastDetection = msg.result;
+            local_lastDetectionTimestamp = Date.now();
+            console.log("Local detection received:", msg.result.bboxes);
+          }
+          drawLocalFrame(blob, local_lastDetection);
+        }
+      };
+      ws.onclose = () => {
+        console.log("Local video WebSocket closed");
+      };
+      ws.onerror = (err) => {
+        console.error("Local video WebSocket error:", err);
+      };
+      local_ws = ws;
+    }
 
+    // 使用类似于 createStreamWS 的方式绘制本地视频流
+    function drawLocalFrame(blob, detection) {
+      createImageBitmap(blob).then((bitmap) => {
+        // 固定本地视频画布尺寸：640x480
+        const canvasW = 640;
+        const canvasH = 480;
+        const videoCanvas = document.getElementById("fileVideoCanvas");
+        const overlayCanvas = document.getElementById("fileOverlayCanvas");
+        videoCanvas.width = canvasW;
+        videoCanvas.height = canvasH;
+        overlayCanvas.width = canvasW;
+        overlayCanvas.height = canvasH;
+        const scaleX = canvasW / bitmap.width;
+        const scaleY = canvasH / bitmap.height;
+
+        const ctx = videoCanvas.getContext("2d");
+        ctx.clearRect(0, 0, canvasW, canvasH);
+        ctx.drawImage(bitmap, 0, 0, canvasW, canvasH);
+
+        const overlayCtx = overlayCanvas.getContext("2d");
+        overlayCtx.clearRect(0, 0, canvasW, canvasH);
+        if (detection && detection.bboxes && detection.bboxes.length > 0) {
+          if (Date.now() - local_lastDetectionTimestamp > 2000) {
+            detection = null;
+          } else {
+            detection.bboxes.forEach(det => {
+              if (!det.bbox_2d || det.bbox_2d.length < 4) return;
+              const [x1, y1, x2, y2] = det.bbox_2d;
+              const boxX = x1 * scaleX;
+              const boxY = y1 * scaleY;
+              const boxW = (x2 - x1) * scaleX;
+              const boxH = (y2 - y1) * scaleY;
+              overlayCtx.strokeStyle = "lime";
+              overlayCtx.lineWidth = 2;
+              overlayCtx.font = "14px Arial";
+              overlayCtx.fillStyle = "lime";
+              overlayCtx.strokeRect(boxX, boxY, boxW, boxH);
+              overlayCtx.fillText(det.label, boxX, boxY - 5);
+              console.log("Local detection bbox:", det.bbox_2d, "label:", det.label);
+            });
+          }
+        }
+      }).catch(err => console.error("Error drawing local frame:", err));
+    }
+
+    // 初始化本地视频 WS 连接
+    createLocalWS();
+
+    // ========== 文件上传及本地视频识别（原有逻辑） ==========
     document.getElementById('fileUploadForm').addEventListener('submit', (e) => {
       e.preventDefault();
       const fileInput = document.getElementById('videoInput');
@@ -406,9 +467,8 @@
       const overlayCanvas = document.getElementById('fileOverlayCanvas');
       const ctx = overlayCanvas.getContext('2d');
       ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-      
       if (window.fileLastDetection && fileOriginalWidth) {
-        if (Date.now() - window.fileDetectionTimestamp > 2000) {
+        if (Date.now() - window.fileDetectionTimestamp > 1200) {
           window.fileLastDetection = null;
         } else {
           const rect = overlayCanvas.getBoundingClientRect();
@@ -528,27 +588,10 @@
       const dataUrl = "data:" + contentType + ";base64," + base64Data;
       return fetch(dataUrl).then(r => r.blob());
     }
-
-    function drawImageOnCanvas(blob, canvas, overlayCanvas, type) {
-      createImageBitmap(blob).then(imgBitmap => {
-        if (type === 'file' && fileOriginalWidth === 0) {
-          fileOriginalWidth = imgBitmap.width;
-          fileOriginalHeight = imgBitmap.height;
-        }
-        // 对于本地视频，这里使用图像原尺寸
-        if(canvas.width !== imgBitmap.width || canvas.height !== imgBitmap.height){
-          canvas.width = imgBitmap.width;
-          canvas.height = imgBitmap.height;
-          overlayCanvas.width = imgBitmap.width;
-          overlayCanvas.height = imgBitmap.height;
-        }
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(imgBitmap, 0, 0);
-      }).catch(err => console.error("createImageBitmap error:", err));
-    }
-
+  </script>
+  <script>
     // ========== 多路互联网流相关代码 ==========
-    // 这里固定流卡片的 canvas 尺寸为 400x300，检测框将按比例换算
+    // 固定流卡片 canvas 尺寸为 400x300
     const fixedCanvasW = 400;
     const fixedCanvasH = 300;
     let channelCounter = 0;
@@ -768,13 +811,11 @@
                 card._fpsDisplay.innerText = "FPS: " + card._currentFPS;
               }
             }
-            // 保存最新检测结果及时间戳
             if (msg.result && msg.result.bboxes && msg.result.bboxes.length > 0) {
               card._lastDetection = msg.result;
               card._lastDetectionTimestamp = Date.now();
               console.log("Stream detection received for session", session_id, msg.result.bboxes);
             }
-            // 绘制图像与检测框（参考本地视频比例计算）
             drawStreamFrame(card, blob, card._lastDetection);
           }
         }
@@ -785,7 +826,6 @@
       ws.onerror = (err) => {
         console.error("WebSocket error:", err);
       };
-      // 保存 WebSocket 对象（可选）
       stream_sessions[session_id] = ws;
     }
 
@@ -797,25 +837,20 @@
       return null;
     }
 
-    // 绘制互联网流卡片：采用固定 canvas 尺寸（400x300），并对检测框坐标按比例换算
     function drawStreamFrame(card, blob, detection) {
       createImageBitmap(blob).then((bitmap) => {
-        // 原始图像尺寸
         const imgW = bitmap.width;
         const imgH = bitmap.height;
-        // 固定 canvas 尺寸
         const canvasW = card._canvas.width;
         const canvasH = card._canvas.height;
         const scaleX = canvasW / imgW;
         const scaleY = canvasH / imgH;
 
         card._ctx.clearRect(0, 0, canvasW, canvasH);
-        // 绘制图像，自动缩放到固定尺寸
         card._ctx.drawImage(bitmap, 0, 0, canvasW, canvasH);
 
-        // 如果检测结果存在且在 2000ms 内更新，则绘制检测框
         if (detection && detection.bboxes && detection.bboxes.length > 0) {
-          if (Date.now() - card._lastDetectionTimestamp > 2000) {
+          if (Date.now() - card._lastDetectionTimestamp > 1200) {
             detection = null;
           } else {
             detection.bboxes.forEach(det => {
@@ -831,7 +866,7 @@
               card._ctx.fillStyle = "lime";
               card._ctx.strokeRect(boxX, boxY, boxW, boxH);
               card._ctx.fillText(det.label, boxX, boxY - 5);
-              console.log("Detection bbox:", det.bbox_2d, "label:", det.label);
+              //console.log("Detection bbox:", det.bbox_2d, "label:", det.label);
             });
           }
         }
