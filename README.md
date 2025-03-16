@@ -2,8 +2,7 @@
 
 基于互联网流的实时检测
 
-![image](https://github.com/user-attachments/assets/a43209e4-4e58-472c-a32f-b4ceb816aa3d)
-
+![image](https://github.com/user-attachments/assets/66c6cfb9-d963-42a9-b1ea-2bf3dfdff4a1)
 
 
 T4 GPU--Qwen2.5-VL-3B-Instruct
