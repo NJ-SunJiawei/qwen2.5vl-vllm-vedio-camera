@@ -324,13 +324,14 @@
          const text = await event.data.text();
          message = JSON.parse(text);
       }
-      // 更新 FPS 计数
+      // 更新 FPS 计数并打印日志
       fileFrameCount++;
       if(Date.now() - fileLastFpsTime >= 1000){
          fileCurrentFPS = fileFrameCount;
          fileFrameCount = 0;
          fileLastFpsTime = Date.now();
          document.getElementById('fileFpsDisplay').innerText = `FPS: ${fileCurrentFPS}`;
+         console.log("File FPS:", fileCurrentFPS);
       }
       if(message.image){
          base64ToBlob(message.image).then(blob => {
@@ -364,6 +365,7 @@
          streamFrameCount = 0;
          streamLastFpsTime = Date.now();
          document.getElementById('streamFpsDisplay').innerText = `FPS: ${streamCurrentFPS}`;
+         console.log("Stream FPS:", streamCurrentFPS);
       }
       if(message.image){
          base64ToBlob(message.image).then(blob => {

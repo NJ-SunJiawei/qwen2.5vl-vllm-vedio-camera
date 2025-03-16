@@ -61,6 +61,9 @@ analysis_semaphore = threading.Semaphore(5)
 direct_send_locks = {}       # key: session_id, value: asyncio.Lock()
 direct_send_last_time = {}   # key: session_id, value: timestamp (float)
 
+# 新增：记录每个 session 的发送 fps 统计数据
+send_fps_data = {}  # key: session_id, value: {"frame_count": int, "last_time": float, "actual_fps": float}
+
 def get_effective_skip(queue_size, base_skip=FRAME_SKIP):
     if queue_size > 50:
         return base_skip * 2
@@ -68,6 +71,22 @@ def get_effective_skip(queue_size, base_skip=FRAME_SKIP):
         return int(base_skip * 1.5)
     else:
         return base_skip
+
+def build_combined_result(session_id: str, binary_frame: bytes, result: dict) -> dict:
+    """更新指定 session 的 fps 统计，并返回带有实际 fps 数据的发送内容"""
+    now = time.time()
+    fps_data = send_fps_data.setdefault(session_id, {"frame_count": 0, "last_time": now, "actual_fps": 0})
+    fps_data["frame_count"] += 1
+    if now - fps_data["last_time"] >= 1.0:
+        fps_data["actual_fps"] = fps_data["frame_count"] / (now - fps_data["last_time"])
+        logging.info(f"Session {session_id}: actual sending FPS: {fps_data['actual_fps']:.2f}")
+        fps_data["frame_count"] = 0
+        fps_data["last_time"] = now
+    return {
+        "image": base64.b64encode(binary_frame).decode("utf-8"),
+        "result": result,
+        "actual_fps": fps_data["actual_fps"]
+    }
 
 async def analyze_frame(session_id: str, frame_id: int, frame_np: bytes, object_str: str):
     base64_image = base64.b64encode(frame_np).decode('utf-8')
@@ -128,11 +147,8 @@ async def send_result_direct(session_id: str, binary_frame: bytes, result: dict,
         sleep_time = interval - (now - last_time)
         if sleep_time > 0:
             await asyncio.sleep(sleep_time)
+        combined = build_combined_result(session_id, binary_frame, result)
         try:
-            combined = {
-                "image": base64.b64encode(binary_frame).decode("utf-8"),
-                "result": result
-            }
             await ws.send_json(combined)
         except Exception as e:
             logging.error(f"Error sending result for session {session_id}: {e}")
@@ -147,10 +163,7 @@ async def send_file_results_worker(worker_index: int):
             ws = file_sessions.get(session_id)
             if ws:
                 try:
-                    combined = {
-                        "image": base64.b64encode(binary_frame).decode("utf-8"),
-                        "result": result
-                    }
+                    combined = build_combined_result(session_id, binary_frame, result)
                     await ws.send_json(combined)
                 except Exception as e:
                     logging.error(f"Error sending file result for session {session_id}: {e}")
@@ -168,10 +181,7 @@ async def send_stream_results_worker(worker_index: int):
             ws = stream_sessions.get(session_id)
             if ws:
                 try:
-                    combined = {
-                        "image": base64.b64encode(binary_frame).decode("utf-8"),
-                        "result": result
-                    }
+                    combined = build_combined_result(session_id, binary_frame, result)
                     await ws.send_json(combined)
                 except Exception as e:
                     logging.error(f"Error sending stream result for session {session_id}: {e}")
