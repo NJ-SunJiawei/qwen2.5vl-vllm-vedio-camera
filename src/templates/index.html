@@ -180,6 +180,14 @@
     .card-title {
       font-size: 18px;
       font-weight: 600;
+      outline: none;
+      padding: 4px 8px;
+      border: 1px dashed transparent;
+      transition: border 0.2s;
+    }
+    .card-title:focus {
+      border: 1px dashed #3b82f6;
+      background-color: #eef6ff;
     }
     .btn-delete {
       background: #6b7280;
@@ -193,15 +201,36 @@
     .btn-delete:hover {
       background: #4b5563;
     }
-    /* 保持离线/在线状态位置不变 */
+    /* 视频播放区域内的FPS和在线状态 */
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      overflow: hidden;
+      border: 1px solid #ccc;
+      padding-right: 10px; /* 留点右边距 */
+    }
+    .card-fps {
+      position: absolute;
+      top: 0;
+      left: 10px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 10;
+    }
     .card-status {
       position: absolute;
-      top: 16px;
-      right: 16px;
+      top: 0;
+      right: 10px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
       padding: 2px 8px;
       border-radius: 4px;
       font-size: 12px;
-      color: #fff;
+      z-index: 10;
     }
     .status-live {
       background: #e53e3e;
@@ -237,17 +266,6 @@
     .btn-detect { background-color: #6366f1; color: #fff; }
     .btn-group button:hover {
       opacity: 0.9;
-    }
-    .card-fps {
-      position: absolute;
-      top: 0;
-      left: 0;
-      background: rgba(0,0,0,0.6);
-      color: #fff;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 12px;
-      z-index: 10;
     }
     /* 图片预览Modal */
     #imageModal {
@@ -293,8 +311,8 @@
     <!-- 左侧菜单 -->
     <div class="sidebar">
       <ul>
-        <li><a href="#" id="menuStream">多路互联网流</a></li>
         <li><a href="#" id="menuFile" class="active">本地视频</a></li>
+        <li><a href="#" id="menuStream">多路互联网流</a></li>
       </ul>
     </div>
     <!-- 右侧内容区域 -->
@@ -638,29 +656,22 @@
       const cardDiv = document.createElement("div");
       cardDiv.className = "stream-card";
       
-      // 卡片头部：显示标题和删除按钮
+      // 卡片头部：显示标题和删除按钮（标题设为可编辑）
       const headerDiv = document.createElement("div");
       headerDiv.className = "card-header";
       
       const titleEl = document.createElement("div");
       titleEl.className = "card-title";
+      titleEl.contentEditable = "true";
       titleEl.innerText = "通道 " + channelCounter;
       headerDiv.appendChild(titleEl);
       
       const btnDelete = document.createElement("button");
       btnDelete.className = "btn-delete";
       btnDelete.innerText = "删除";
-      headerDiv.appendChild(btnDelete);
-      cardDiv.appendChild(headerDiv);
-      
-      // 状态显示（离线/在线位置保持不变）
-      const statusDiv = document.createElement("div");
-      statusDiv.className = "card-status status-offline";
-      statusDiv.innerText = "离线";
-      cardDiv.appendChild(statusDiv);
-      
-      // 绑定删除按钮事件（此时statusDiv已定义）
-      btnDelete.onclick = async () => {
+      // 阻止拖拽时点击事件冲突
+      btnDelete.addEventListener("click", async (e) => {
+        e.stopPropagation();
         try {
           await stopStream(sessionId, statusDiv);
         } catch (error) {
@@ -668,8 +679,15 @@
         } finally {
           cardDiv.remove();
         }
-      };
-
+      });
+      headerDiv.appendChild(btnDelete);
+      cardDiv.appendChild(headerDiv);
+      
+      // 创建状态显示（离线/在线）--稍后添加到视频播放区域内
+      const statusDiv = document.createElement("div");
+      statusDiv.className = "card-status status-offline";
+      statusDiv.innerText = "离线";
+      
       // 输入框区域
       const addrInput = document.createElement("input");
       addrInput.className = "card-input";
@@ -729,17 +747,20 @@
       // 播放区域：video-wrapper填满卡片内容宽度，保持4:3比例
       const videoWrapper = document.createElement("div");
       videoWrapper.className = "video-wrapper";
-      // 这里不再固定宽高，由CSS aspect-ratio控制
       const canvas = document.createElement("canvas");
+      // 初始设置为固定尺寸
       canvas.width = fixedCanvasW;
       canvas.height = fixedCanvasH;
       canvas.style.backgroundColor = "#000";
       videoWrapper.appendChild(canvas);
+      
+      // 将FPS显示和状态显示添加到视频播放区域内（分别位于左上和右上）
       const fpsDiv = document.createElement("div");
       fpsDiv.className = "card-fps";
       fpsDiv.innerText = "FPS: 0";
       videoWrapper.appendChild(fpsDiv);
-
+      videoWrapper.appendChild(statusDiv);
+      
       cardDiv.appendChild(videoWrapper);
       containerStream.appendChild(cardDiv);
 
@@ -795,11 +816,15 @@
               target.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
               target.setAttribute('data-x', x);
               target.setAttribute('data-y', y);
-              // 播放区域自适应：让 video-wrapper 宽度填满，保持 aspect-ratio 4:3
               const videoWrapper = target.querySelector('.video-wrapper');
               if (videoWrapper) {
-                // video-wrapper宽度随卡片调整，height自动由 CSS aspect-ratio决定
                 videoWrapper.style.width = "100%";
+                // 随卡片拉伸更新播放区（canvas）尺寸
+                const canvas = videoWrapper.querySelector("canvas");
+                if (canvas) {
+                  canvas.width = videoWrapper.clientWidth;
+                  canvas.height = videoWrapper.clientHeight;
+                }
               }
             }
           }
