@@ -483,41 +483,44 @@
 
     createLocalWS();
 
-    // 缩略图相关（修改处：使用 local_lastDetection 替换 window.fileLastDetection）
+    // 缩略图相关
     let fileThumbnailList = [];
     function addFileThumbnail() {
       if (!local_lastDetection || !local_lastDetection.bboxes || local_lastDetection.bboxes.length === 0) return;
-      const fileVideoCanvas = document.getElementById('fileVideoCanvas');
-      const dataURL = fileVideoCanvas.toDataURL("image/jpeg", 0.5);
-      const labels = local_lastDetection.bboxes.map(det => det.label);
-      const uniqueLabels = [...new Set(labels)];
-      const labelText = uniqueLabels.join(", ");
-      
-      const thumbnailItem = document.createElement("div");
-      thumbnailItem.className = "thumbnail-item";
-      
-      const img = document.createElement("img");
-      img.src = dataURL;
-      fileThumbnailList.push(dataURL);
-      img.dataset.index = fileThumbnailList.length - 1;
-      img.addEventListener("click", () => {
-        showModal(fileThumbnailList, parseInt(img.dataset.index));
-      });
-      thumbnailItem.appendChild(img);
-      
-      const labelDiv = document.createElement("div");
-      labelDiv.className = "thumbnail-label";
-      labelDiv.innerText = labelText;
-      thumbnailItem.appendChild(labelDiv);
-      
-      const container = document.getElementById('fileThumbnailContainer');
-      container.appendChild(thumbnailItem);
-      
-      while (fileThumbnailList.length > 6) {
-        fileThumbnailList.shift();
-        container.removeChild(container.firstChild);
-      }
-      updateThumbnailIndices(container);
+      // 延时100毫秒再捕获，确保canvas已绘制完成
+      setTimeout(() => {
+        const fileVideoCanvas = document.getElementById('fileVideoCanvas');
+        const dataURL = fileVideoCanvas.toDataURL("image/jpeg", 0.5);
+        const labels = local_lastDetection.bboxes.map(det => det.label);
+        const uniqueLabels = [...new Set(labels)];
+        const labelText = uniqueLabels.join(", ");
+        
+        const thumbnailItem = document.createElement("div");
+        thumbnailItem.className = "thumbnail-item";
+        
+        const img = document.createElement("img");
+        img.src = dataURL;
+        fileThumbnailList.push(dataURL);
+        img.dataset.index = fileThumbnailList.length - 1;
+        img.addEventListener("click", () => {
+          showModal(fileThumbnailList, parseInt(img.dataset.index));
+        });
+        thumbnailItem.appendChild(img);
+        
+        const labelDiv = document.createElement("div");
+        labelDiv.className = "thumbnail-label";
+        labelDiv.innerText = labelText;
+        thumbnailItem.appendChild(labelDiv);
+        
+        const container = document.getElementById('fileThumbnailContainer');
+        container.appendChild(thumbnailItem);
+        
+        while (fileThumbnailList.length > 6) {
+          fileThumbnailList.shift();
+          container.removeChild(container.firstChild);
+        }
+        updateThumbnailIndices(container);
+      }, 100);
     }
 
     function updateThumbnailIndices(container) {
