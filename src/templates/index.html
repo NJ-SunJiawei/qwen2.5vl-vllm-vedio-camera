@@ -343,8 +343,9 @@
       </div>
       <!-- 多路互联网流区 -->
       <div id="sectionStream" class="hidden">
-        <div class="mb-4">
+        <div class="mb-4 flex gap-2">
           <button id="addChannelBtn" class="bg-blue-500 text-white px-4 py-2 rounded">新增通道卡片</button>
+          <button id="resetLayoutBtn" class="bg-gray-500 text-white px-4 py-2 rounded">恢复默认布局</button>
         </div>
         <div class="card-container" id="multiStreamContainer">
           <!-- 动态插入卡片 -->
@@ -646,9 +647,36 @@
     let channelCounter = 0;
     const containerStream = document.getElementById("multiStreamContainer");
 
+    // 新增卡片和恢复默认布局按钮事件
     document.getElementById("addChannelBtn").addEventListener("click", () => {
       addStreamCard();
     });
+    document.getElementById("resetLayoutBtn").addEventListener("click", () => {
+      resetLayout();
+    });
+
+    // 恢复所有卡片原来排版（删除拖拽、调整尺寸的内联样式）
+    function resetLayout() {
+      const cards = containerStream.querySelectorAll(".stream-card");
+      cards.forEach(card => {
+        // 清除拖拽记录
+        card.style.transform = "";
+        card.removeAttribute("data-x");
+        card.removeAttribute("data-y");
+        // 清除调整尺寸设置
+        card.style.width = "";
+        card.style.height = "";
+        // 同步更新播放区canvas尺寸
+        const videoWrapper = card.querySelector('.video-wrapper');
+        if (videoWrapper) {
+          const canvas = videoWrapper.querySelector("canvas");
+          if (canvas) {
+            canvas.width = videoWrapper.clientWidth;
+            canvas.height = videoWrapper.clientHeight;
+          }
+        }
+      });
+    }
 
     function addStreamCard() {
       channelCounter++;
