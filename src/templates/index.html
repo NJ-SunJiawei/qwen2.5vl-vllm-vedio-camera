@@ -67,7 +67,6 @@
     }
     .canvas-wrapper {
       position: relative;
-      /* 改为宽度100%，使用 aspect-ratio 保持4:3 */
       width: 100%;
       aspect-ratio: 4 / 3;
       overflow: hidden;
@@ -260,9 +259,9 @@
       transition: background-color 0.2s;
     }
     .btn-start { background-color: #3b82f6; color: #fff; }
+    .btn-stop { background-color: #ef4444; color: #fff; }
     .btn-pause { background-color: #f59e0b; color: #fff; }
     .btn-resume { background-color: #10b981; color: #fff; }
-    .btn-stop { background-color: #ef4444; color: #fff; }
     .btn-detect { background-color: #6366f1; color: #fff; }
     .btn-group button:hover {
       opacity: 0.9;
@@ -659,14 +658,11 @@
     function resetLayout() {
       const cards = containerStream.querySelectorAll(".stream-card");
       cards.forEach(card => {
-        // 清除拖拽记录
         card.style.transform = "";
         card.removeAttribute("data-x");
         card.removeAttribute("data-y");
-        // 清除调整尺寸设置
         card.style.width = "";
         card.style.height = "";
-        // 同步更新播放区canvas尺寸
         const videoWrapper = card.querySelector('.video-wrapper');
         if (videoWrapper) {
           const canvas = videoWrapper.querySelector("canvas");
@@ -683,6 +679,9 @@
       const sessionId = "stream_session_" + Date.now() + "_" + channelCounter;
       const cardDiv = document.createElement("div");
       cardDiv.className = "stream-card";
+      // 用于记录流状态：未启动、已启动、暂停
+      cardDiv._streamRunning = false;
+      cardDiv._paused = false;
       
       // 卡片头部：显示标题和删除按钮（标题设为可编辑）
       const headerDiv = document.createElement("div");
@@ -697,7 +696,6 @@
       const btnDelete = document.createElement("button");
       btnDelete.className = "btn-delete";
       btnDelete.innerText = "删除";
-      // 阻止拖拽时点击事件冲突
       btnDelete.addEventListener("click", async (e) => {
         e.stopPropagation();
         try {
@@ -727,45 +725,67 @@
       detectInput.placeholder = "请输入检测目标(多个用逗号)";
       cardDiv.appendChild(detectInput);
 
-      // 按钮组
+      // 按钮组，合并拉流/停止和暂停/恢复按钮
       const btnGroup = document.createElement("div");
       btnGroup.className = "btn-group";
       cardDiv.appendChild(btnGroup);
 
-      const btnStart = document.createElement("button");
-      btnStart.className = "btn-start";
-      btnStart.innerText = "拉流";
-      btnStart.onclick = () => {
+      // 拉流/停止按钮
+      const btnToggleStream = document.createElement("button");
+      // 初始状态使用 btn-start 样式，显示“拉流”
+      btnToggleStream.className = "btn-start";
+      btnToggleStream.innerText = "拉流";
+      btnToggleStream.onclick = async () => {
         const url = addrInput.value.trim();
         if (!url) {
           alert("请先输入流地址");
           return;
         }
-        startStream(sessionId, url, statusDiv);
+        if (!cardDiv._streamRunning) {
+          await startStream(sessionId, url, statusDiv);
+          cardDiv._streamRunning = true;
+          btnToggleStream.className = "btn-stop";
+          btnToggleStream.innerText = "停止";
+          // 启动后使暂停/恢复按钮可用
+          btnTogglePause.disabled = false;
+        } else {
+          await stopStream(sessionId, statusDiv);
+          cardDiv._streamRunning = false;
+          cardDiv._paused = false;
+          btnToggleStream.className = "btn-start";
+          btnToggleStream.innerText = "拉流";
+          // 重置暂停/恢复按钮状态
+          btnTogglePause.className = "btn-pause";
+          btnTogglePause.innerText = "暂停";
+          btnTogglePause.disabled = true;
+        }
       };
-      btnGroup.appendChild(btnStart);
+      btnGroup.appendChild(btnToggleStream);
 
-      const btnPause = document.createElement("button");
-      btnPause.className = "btn-pause";
-      btnPause.innerText = "暂停";
-      btnPause.onclick = () => pauseStream(sessionId);
-      btnGroup.appendChild(btnPause);
+      // 暂停/恢复按钮
+      const btnTogglePause = document.createElement("button");
+      btnTogglePause.className = "btn-pause";
+      btnTogglePause.innerText = "暂停";
+      btnTogglePause.disabled = true;
+      btnTogglePause.onclick = async () => {
+        if (!cardDiv._paused) {
+          await pauseStream(sessionId);
+          cardDiv._paused = true;
+          btnTogglePause.className = "btn-resume";
+          btnTogglePause.innerText = "恢复";
+        } else {
+          await resumeStream(sessionId);
+          cardDiv._paused = false;
+          btnTogglePause.className = "btn-pause";
+          btnTogglePause.innerText = "暂停";
+        }
+      };
+      btnGroup.appendChild(btnTogglePause);
 
-      const btnResume = document.createElement("button");
-      btnResume.className = "btn-resume";
-      btnResume.innerText = "恢复";
-      btnResume.onclick = () => resumeStream(sessionId);
-      btnGroup.appendChild(btnResume);
-
-      const btnStop = document.createElement("button");
-      btnStop.className = "btn-stop";
-      btnStop.innerText = "停止";
-      btnStop.onclick = () => stopStream(sessionId, statusDiv);
-      btnGroup.appendChild(btnStop);
-
+      // AI识别按钮（原“检测”按钮，更名为“AI识别”）
       const btnDetect = document.createElement("button");
       btnDetect.className = "btn-detect";
-      btnDetect.innerText = "检测";
+      btnDetect.innerText = "AI识别";
       btnDetect.onclick = () => {
         const objs = detectInput.value.trim();
         if (objs) setAnalyze(sessionId, objs);
@@ -776,7 +796,6 @@
       const videoWrapper = document.createElement("div");
       videoWrapper.className = "video-wrapper";
       const canvas = document.createElement("canvas");
-      // 初始设置为固定尺寸
       canvas.width = fixedCanvasW;
       canvas.height = fixedCanvasH;
       canvas.style.backgroundColor = "#000";
@@ -847,7 +866,6 @@
               const videoWrapper = target.querySelector('.video-wrapper');
               if (videoWrapper) {
                 videoWrapper.style.width = "100%";
-                // 随卡片拉伸更新播放区（canvas）尺寸
                 const canvas = videoWrapper.querySelector("canvas");
                 if (canvas) {
                   canvas.width = videoWrapper.clientWidth;
