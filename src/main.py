@@ -19,9 +19,6 @@ from pydantic import BaseModel
 # 请确保 openai 模块已正确安装和配置
 from openai import OpenAI
 
-# --------------------
-# 日志配置：支持不同级别的日志打印
-# --------------------
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -31,18 +28,13 @@ templates = Jinja2Templates(directory="templates")
 # --------------------
 # 宏开关设置
 # --------------------
-# True：在 worker 中直接发送结果（send_result 限制 FPS，不通过独立发送队列）
-# False：使用原先的发送队列模式，通过独立的发送任务完成发送
 DIRECT_SEND_MODE = False
-# --------------------
-# 配置及全局变量
-# --------------------
 WORKER_COUNT = 8             # 处理帧的工作线程数量
 SEND_WORKER_COUNT = 8        # 发送任务的工作线程数量（仅在 DIRECT_SEND_MODE=False 时使用）
 OPENAI_WORKER_COUNT = 10     # 调用大模型线程池数量
-TARGET_FPS = 50              # 发送帧率（用于限制发送速度,暂时处理效率跟不上无效）
-ANALYSIS_FPS = 20            # 分析帧率（用于降低原始帧）
-FRAME_SKIP = 400             # 基础跳帧数（用于检测抽帧）
+TARGET_FPS = 50              # 发送帧率
+ANALYSIS_FPS = 20            # 分析帧率
+FRAME_SKIP = 100             # 基础跳帧数
 
 client = OpenAI(
     base_url="http://124.220.202.52:8000/v1",
@@ -53,35 +45,22 @@ client = OpenAI(
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# 全局工作队列，每个工作线程对应一个 asyncio.Queue
 worker_queues = [asyncio.Queue() for _ in range(WORKER_COUNT)]
-# 增加线程池的最大线程数，便于处理更多并发任务
 thread_executor = ThreadPoolExecutor(max_workers=OPENAI_WORKER_COUNT)
 
-# 仅在 DIRECT_SEND_MODE=False 时启用发送队列与独立发送任务
 file_send_queues = [asyncio.Queue() for _ in range(SEND_WORKER_COUNT)]
 stream_send_queues = [asyncio.Queue() for _ in range(SEND_WORKER_COUNT)]
 
-# 多用户会话管理（session_id 映射到 WebSocket 连接）
 file_sessions = {}    # 本地视频会话
 stream_sessions = {}  # 互联网流会话
 
-# 针对互联网流，每个 session 可能有不同的检测目标
 stream_detection = {}  # 键：session_id，值：检测目标字符串
-
-# 新增：为每个互联网流会话设置状态，状态可为 "running"、"paused"、"stopped"
 stream_state = {}      # 键：session_id，值：状态字符串
 
-# 为防止并发调用 OpenAI API 导致连接错误，增加全局信号量，限制同时并发调用数量
 analysis_semaphore = threading.Semaphore(5)
-
-# 在直接发送模式下，为每个 session 设置发送锁和上一次发送时间，确保发送间隔
 direct_send_locks = {}       # key: session_id, value: asyncio.Lock()
 direct_send_last_time = {}   # key: session_id, value: timestamp (float)
 
-# --------------------
-# 公共函数
-# --------------------
 def get_effective_skip(queue_size, base_skip=FRAME_SKIP):
     if queue_size > 50:
         return base_skip * 2
@@ -125,7 +104,6 @@ async def analyze_frame(session_id: str, frame_id: int, frame_np: bytes, object_
         raise
 
 def process_frame_wrapper(session_id, frame_id, frame_np, object_str):
-    # 增加重试机制，最多重试 1 次
     for attempt in range(1):
         try:
             with analysis_semaphore:
@@ -151,8 +129,11 @@ async def send_result_direct(session_id: str, binary_frame: bytes, result: dict,
         if sleep_time > 0:
             await asyncio.sleep(sleep_time)
         try:
-            await ws.send_bytes(binary_frame)
-            await ws.send_json(result)
+            combined = {
+                "image": base64.b64encode(binary_frame).decode("utf-8"),
+                "result": result
+            }
+            await ws.send_json(combined)
         except Exception as e:
             logging.error(f"Error sending result for session {session_id}: {e}")
         direct_send_last_time[session_id] = time.time()
@@ -166,8 +147,11 @@ async def send_file_results_worker(worker_index: int):
             ws = file_sessions.get(session_id)
             if ws:
                 try:
-                    await ws.send_bytes(binary_frame)
-                    await ws.send_json(result)
+                    combined = {
+                        "image": base64.b64encode(binary_frame).decode("utf-8"),
+                        "result": result
+                    }
+                    await ws.send_json(combined)
                 except Exception as e:
                     logging.error(f"Error sending file result for session {session_id}: {e}")
             file_send_queues[worker_index].task_done()
@@ -184,8 +168,11 @@ async def send_stream_results_worker(worker_index: int):
             ws = stream_sessions.get(session_id)
             if ws:
                 try:
-                    await ws.send_bytes(binary_frame)
-                    await ws.send_json(result)
+                    combined = {
+                        "image": base64.b64encode(binary_frame).decode("utf-8"),
+                        "result": result
+                    }
+                    await ws.send_json(combined)
                 except Exception as e:
                     logging.error(f"Error sending stream result for session {session_id}: {e}")
             stream_send_queues[worker_index].task_done()
@@ -193,7 +180,6 @@ async def send_stream_results_worker(worker_index: int):
         sleep_time = max(0, interval - processing_time)
         await asyncio.sleep(sleep_time)
 
-# 清除指定 session 的所有队列数据
 async def clear_session_queues(session_id: str):
     for q in worker_queues:
         new_deque = collections.deque(item for item in q._queue if item[0] != session_id)
@@ -302,9 +288,6 @@ async def websocket_stream(websocket: WebSocket):
     finally:
         stream_sessions.pop(session_id, None)
 
-# --------------------
-# 接口：上传视频（本地视频模式）
-# --------------------
 @app.post("/upload")
 async def upload_video(video: UploadFile = File(...)):
     logging.info("视频上传，保存中...")
@@ -313,9 +296,6 @@ async def upload_video(video: UploadFile = File(...)):
         shutil.copyfileobj(video.file, buffer)
     return {"status": "success", "message": "视频上传成功", "filename": video.filename}
 
-# --------------------
-# 接口：本地视频分析
-# --------------------
 @app.post("/analyze")
 async def analyze_video(request: AnalyzeRequest):
     session_id = request.session_id
@@ -353,9 +333,6 @@ async def analyze_video(request: AnalyzeRequest):
     os.remove(video_path)
     return {"status": "processing", "message": "视频分析中..."}
 
-# --------------------
-# 接口：启动互联网流拉流
-# --------------------
 @app.post("/stream")
 async def start_stream(request: StreamRequest, background_tasks: BackgroundTasks):
     session_id = request.session_id
@@ -367,9 +344,6 @@ async def start_stream(request: StreamRequest, background_tasks: BackgroundTasks
     background_tasks.add_task(stream_video_reader, session_id, stream_url)
     return {"status": "success", "message": "互联网流拉流启动", "stream_url": stream_url}
 
-# --------------------
-# 接口：设置互联网流检测目标
-# --------------------
 @app.post("/stream/analyze")
 async def analyze_stream(request: StreamAnalyzeRequest):
     session_id = request.session_id
@@ -380,9 +354,6 @@ async def analyze_stream(request: StreamAnalyzeRequest):
     logging.info(f"设置互联网流检测目标，session: {session_id}, 对象: {object_str}")
     return {"status": "success", "message": "互联网流目标检测已启动", "object": object_str}
 
-# --------------------
-# 新增接口：暂停互联网流（同时清空该 session 队列数据）
-# --------------------
 @app.post("/stream/pause")
 async def pause_stream(request: StreamControlRequest):
     session_id = request.session_id
@@ -393,9 +364,6 @@ async def pause_stream(request: StreamControlRequest):
     logging.info(f"暂停互联网流，并清空队列数据，session: {session_id}")
     return {"status": "success", "message": "互联网流已暂停，队列数据已清空"}
 
-# --------------------
-# 新增接口：恢复互联网流（从暂停状态恢复，不清空队列数据）
-# --------------------
 @app.post("/stream/resume")
 async def resume_stream(request: StreamControlRequest):
     session_id = request.session_id
@@ -405,9 +373,6 @@ async def resume_stream(request: StreamControlRequest):
     logging.info(f"恢复互联网流，session: {session_id}")
     return {"status": "success", "message": "互联网流已恢复"}
 
-# --------------------
-# 新增接口：停止互联网流（关闭拉流并清空队列数据）
-# --------------------
 @app.post("/stream/stop")
 async def stop_stream(request: StreamControlRequest):
     session_id = request.session_id
@@ -418,30 +383,19 @@ async def stop_stream(request: StreamControlRequest):
     logging.info(f"停止互联网流，并清空队列数据，session: {session_id}")
     return {"status": "success", "message": "互联网流已停止，队列数据已清空"}
 
-# --------------------
-# 互联网流视频读取任务（支持 RTSP）
-# --------------------
 async def stream_video_reader(session_id: str, stream_url: str):
     loop = asyncio.get_running_loop()
-    
     try:
-        # 方法 1：尝试设置 OpenCV 超时属性
         cap = await loop.run_in_executor(None, cv2.VideoCapture, stream_url)
-        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)  # 5秒超时
-        
-        # 方法 2：异步超时备选方案
-        # cap = await asyncio.wait_for(
-        #     loop.run_in_executor(None, cv2.VideoCapture, stream_url),
-        #     timeout=5
-        # )
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
     except (asyncio.TimeoutError, cv2.error) as e:
         logging.error(f"打开网络流失败: {stream_url}, session: {session_id}, 错误: {e}")
         return
-    
+
     if not cap.isOpened():
         logging.error(f"无法打开网络流: {stream_url}，session: {session_id}")
         return
-    
+
     fps = await loop.run_in_executor(None, cap.get, cv2.CAP_PROP_FPS)
     if fps <= 0:
         fps = ANALYSIS_FPS
@@ -464,9 +418,7 @@ async def stream_video_reader(session_id: str, stream_url: str):
             await asyncio.sleep(0.01)
             continue
         if frame_id % frame_interval == 0:
-            #resized_frame = cv2.resize(frame, (640, 360)) #固定目标分辨率
-            #resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)))##调整缩放比例
-            resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)), interpolation=cv2.INTER_AREA) #使用 cv2.INTER_AREA 进行插值，避免模糊
+            resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)), interpolation=cv2.INTER_AREA)
             _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
             binary_frame = buffer.tobytes()
             second = frame_id // int(fps)
@@ -477,9 +429,6 @@ async def stream_video_reader(session_id: str, stream_url: str):
         await asyncio.sleep(0)
     cap.release()
 
-# --------------------
-# 首页
-# --------------------
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
