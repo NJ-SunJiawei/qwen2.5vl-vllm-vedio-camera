@@ -6,14 +6,16 @@ import numpy as np
 import os
 import shutil
 import time
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
 import threading
 import logging
 import collections
 
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+
 from fastapi import FastAPI, WebSocket, UploadFile, File, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 # 请确保 openai 模块已正确安装和配置
@@ -26,6 +28,11 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
 app = FastAPI()
+
+# 挂载静态文件目录（用于访问 /static/css, /static/js 等）
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 挂载模板目录（用于渲染 index.html）
 templates = Jinja2Templates(directory="templates")
 
 # --------------------
@@ -42,7 +49,7 @@ SEND_WORKER_COUNT = 8        # 发送任务的工作线程数量（仅在 DIRECT
 OPENAI_WORKER_COUNT = 10     # 调用大模型线程池数量
 TARGET_FPS = 20              # 发送帧率
 ANALYSIS_FPS = 10            # 分析帧率
-FRAME_SKIP = 200             # 基础跳帧数
+FRAME_SKIP = 80              # 基础跳帧数
 
 client = OpenAI(
     base_url="http://124.220.202.52:8000/v1",  # 示例地址
@@ -239,12 +246,12 @@ async def worker_task(worker_id: int, queue: asyncio.Queue):
         if DIRECT_SEND_MODE:
             await send_result_direct(session_id, binary_frame, result, mode)
         else:
+            send_worker_index = (abs(hash(session_id)) % SEND_WORKER_COUNT)
             if mode == "file":
-                send_worker_index = (abs(hash(session_id)) % SEND_WORKER_COUNT)
                 await file_send_queues[send_worker_index].put((session_id, binary_frame, result))
             else:
-                send_worker_index = (abs(hash(session_id)) % SEND_WORKER_COUNT)
                 await stream_send_queues[send_worker_index].put((session_id, binary_frame, result))
+
         logging.debug(f"Worker {worker_id}: Processed frame {frame_id} for session {session_id}. Queue size: {queue.qsize()}")
         queue.task_done()
 
@@ -320,7 +327,7 @@ async def websocket_file(websocket: WebSocket):
         logging.info(f"本地视频 WebSocket disconnected, session_id: {session_id}")
 
 # --------------------
-# 互联网流管理
+# 互联网流管理接口
 # --------------------
 @app.post("/stream")
 async def start_stream(request: StreamRequest, background_tasks: BackgroundTasks):
@@ -453,7 +460,7 @@ async def analyze_video(request: AnalyzeRequest):
             resized_frame = cv2.resize(frame, (int(frame.shape[1] * 0.5), int(frame.shape[0] * 0.5)))
             _, buffer = cv2.imencode(".jpg", resized_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
             binary_frame = buffer.tobytes()
-            worker_index = hash(session_id) % WORKER_COUNT
+            worker_index = abs(hash(session_id)) % WORKER_COUNT
             await worker_queues[worker_index].put((session_id, frame_id, binary_frame, object_str, second, "file"))
             logging.info(f"Frame {frame_id} added to worker {worker_index} queue for session {session_id}")
         frame_id += 1
@@ -462,6 +469,9 @@ async def analyze_video(request: AnalyzeRequest):
     os.remove(video_path)
     return {"status": "processing", "message": "视频分析中..."}
 
+# --------------------
+# 前端页面
+# --------------------
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})

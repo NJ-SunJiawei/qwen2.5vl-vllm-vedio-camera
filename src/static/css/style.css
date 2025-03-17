@@ -1,0 +1,295 @@
+/* 整体背景与字体 */
+body {
+  background: linear-gradient(135deg, #ece9e6, #ffffff);
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+}
+/* 页面容器 */
+.container {
+  display: flex;
+  min-height: 100vh;
+  max-width: 1400px;
+  margin: 0 auto;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+/* 侧边菜单 */
+.sidebar {
+  width: 220px;
+  background-color: #f3f4f6;
+  padding: 20px;
+  border-right: 1px solid #ddd;
+}
+.sidebar ul {
+  list-style: none;
+  padding: 0;
+}
+.sidebar li {
+  margin-bottom: 20px;
+}
+.sidebar a {
+  display: block;
+  padding: 10px 15px;
+  color: #333;
+  border-radius: 4px;
+  text-decoration: none;
+  transition: background-color 0.2s;
+}
+.sidebar a.active, .sidebar a:hover {
+  background-color: #3b82f6;
+  color: #fff;
+}
+/* 内容区域 */
+.content {
+  flex: 1;
+  padding: 20px;
+  background-color: #fff;
+}
+/* 本地视频区域 */
+.video-container {
+  background-color: #000;
+  position: relative;
+  width: 100%;
+  max-height: 80vh;
+  border: 1px solid #ddd;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.canvas-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1px solid #ccc;
+}
+.canvas-wrapper canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.fps-display {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  z-index: 10;
+}
+.fullscreen-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  z-index: 11;
+}
+.thumbnail-container {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.thumbnail-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 4px;
+  background: #fafafa;
+}
+.thumbnail-item img {
+  width: 80px;
+  height: auto;
+  cursor: pointer;
+}
+.thumbnail-label {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #333;
+  text-align: center;
+  word-break: break-all;
+}
+#progressContainer {
+  width: 100%;
+  background: #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 10px;
+  position: relative;
+  height: 20px;
+}
+#progressBar {
+  height: 100%;
+  width: 0%;
+  background: #3b82f6;
+  transition: width 0.2s;
+}
+#progressText {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  line-height: 20px;
+  font-size: 14px;
+  color: #333;
+}
+/* 多路互联网流区域 */
+.card-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 20px;
+}
+.stream-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  position: relative;
+  transition: transform 0.2s;
+  overflow: hidden;
+}
+.stream-card:hover {
+  transform: translateY(-4px);
+}
+/* 卡片头部：标题和删除按钮 */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.card-title {
+  font-size: 18px;
+  font-weight: 600;
+  outline: none;
+  padding: 4px 8px;
+  border: 1px dashed transparent;
+  transition: border 0.2s;
+}
+.card-title:focus {
+  border: 1px dashed #3b82f6;
+  background-color: #eef6ff;
+}
+.btn-delete {
+  background: #6b7280;
+  color: #fff;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-delete:hover {
+  background: #4b5563;
+}
+/* 视频播放区域内的FPS和在线状态 */
+.video-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4/3;
+  overflow: hidden;
+  border: 1px solid #ccc;
+  padding-right: 10px;
+}
+.card-fps {
+  position: absolute;
+  top: 0;
+  left: 10px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 10;
+}
+.card-status {
+  position: absolute;
+  top: 0;
+  right: 10px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 10;
+}
+.status-live {
+  background: #e53e3e;
+}
+.status-offline {
+  background: #718096;
+}
+.card-input {
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  width: 100%;
+}
+.btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.btn-group button {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.btn-start { background-color: #3b82f6; color: #fff; }
+.btn-stop { background-color: #ef4444; color: #fff; }
+.btn-pause { background-color: #f59e0b; color: #fff; }
+.btn-resume { background-color: #10b981; color: #fff; }
+.btn-detect { background-color: #6366f1; color: #fff; }
+.btn-group button:hover {
+  opacity: 0.9;
+}
+/* 图片预览 Modal */
+#imageModal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 50;
+}
+#imageModal.hidden {
+  display: none;
+}
+#modalImage {
+  max-width: 90%;
+  max-height: 90%;
+  border: 4px solid #fff;
+  border-radius: 8px;
+}
+.modal-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 2rem;
+  color: #fff;
+  cursor: pointer;
+  user-select: none;
+  padding: 0 10px;
+}
+#modalPrev {
+  left: 20px;
+}
+#modalNext {
+  right: 20px;
+}

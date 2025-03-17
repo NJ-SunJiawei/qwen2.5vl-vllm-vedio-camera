@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Qwen2.5-VL AI智能识别</title>
+  <!-- TailwindCSS，可自行替换CDN或本地文件 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
+  <style>
+    /* 整体背景与字体 */
+    body {
+      background: linear-gradient(135deg, #ece9e6, #ffffff);
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+    }
+    /* 页面容器 */
+    .container {
+      display: flex;
+      min-height: 100vh;
+      max-width: 1400px;
+      margin: 0 auto;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    /* 侧边菜单 */
+    .sidebar {
+      width: 220px;
+      background-color: #f3f4f6;
+      padding: 20px;
+      border-right: 1px solid #ddd;
+    }
+    .sidebar ul {
+      list-style: none;
+      padding: 0;
+    }
+    .sidebar li {
+      margin-bottom: 20px;
+    }
+    .sidebar a {
+      display: block;
+      padding: 10px 15px;
+      color: #333;
+      border-radius: 4px;
+      text-decoration: none;
+      transition: background-color 0.2s;
+    }
+    .sidebar a.active, .sidebar a:hover {
+      background-color: #3b82f6;
+      color: #fff;
+    }
+    /* 内容区域 */
+    .content {
+      flex: 1;
+      padding: 20px;
+      background-color: #fff;
+    }
+    /* 本地视频区域 */
+    .video-container {
+      background-color: #000;
+      position: relative;
+      width: 100%;
+      max-height: 80vh;
+      border: 1px solid #ddd;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .canvas-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      overflow: hidden;
+      border: 1px solid #ccc;
+    }
+    .canvas-wrapper canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .fps-display {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 14px;
+      z-index: 10;
+    }
+    .fullscreen-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      z-index: 11;
+    }
+    .thumbnail-container {
+      margin-top: 10px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .thumbnail-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 4px;
+      background: #fafafa;
+    }
+    .thumbnail-item img {
+      width: 80px;
+      height: auto;
+      cursor: pointer;
+    }
+    .thumbnail-label {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #333;
+      text-align: center;
+      word-break: break-all;
+    }
+    #progressContainer {
+      width: 100%;
+      background: #e5e7eb;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 10px;
+      position: relative;
+      height: 20px;
+    }
+    #progressBar {
+      height: 100%;
+      width: 0%;
+      background: #3b82f6;
+      transition: width 0.2s;
+    }
+    #progressText {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      line-height: 20px;
+      font-size: 14px;
+      color: #333;
+    }
+    /* 多路互联网流区域 */
+    .card-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 20px;
+    }
+    .stream-card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      position: relative;
+      transition: transform 0.2s;
+      overflow: hidden;
+    }
+    .stream-card:hover {
+      transform: translateY(-4px);
+    }
+    /* 卡片头部：标题和删除按钮 */
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .card-title {
+      font-size: 18px;
+      font-weight: 600;
+      outline: none;
+      padding: 4px 8px;
+      border: 1px dashed transparent;
+      transition: border 0.2s;
+    }
+    .card-title:focus {
+      border: 1px dashed #3b82f6;
+      background-color: #eef6ff;
+    }
+    .btn-delete {
+      background: #6b7280;
+      color: #fff;
+      padding: 4px 8px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-delete:hover {
+      background: #4b5563;
+    }
+    /* 视频播放区域内的FPS和在线状态 */
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      overflow: hidden;
+      border: 1px solid #ccc;
+      padding-right: 10px; /* 留点右边距 */
+    }
+    .card-fps {
+      position: absolute;
+      top: 0;
+      left: 10px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 10;
+    }
+    .card-status {
+      position: absolute;
+      top: 0;
+      right: 10px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 10;
+    }
+    .status-live {
+      background: #e53e3e;
+    }
+    .status-offline {
+      background: #718096;
+    }
+    .card-input {
+      margin-bottom: 8px;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      width: 100%;
+    }
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .btn-group button {
+      flex: 1;
+      padding: 8px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    .btn-start { background-color: #3b82f6; color: #fff; }
+    .btn-stop { background-color: #ef4444; color: #fff; }
+    .btn-pause { background-color: #f59e0b; color: #fff; }
+    .btn-resume { background-color: #10b981; color: #fff; }
+    .btn-detect { background-color: #6366f1; color: #fff; }
+    .btn-group button:hover {
+      opacity: 0.9;
+    }
+    /* 图片预览Modal */
+    #imageModal {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.75);
+      z-index: 50;
+    }
+    #imageModal.hidden {
+      display: none;
+    }
+    #modalImage {
+      max-width: 90%;
+      max-height: 90%;
+      border: 4px solid #fff;
+      border-radius: 8px;
+    }
+    .modal-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 2rem;
+      color: #fff;
+      cursor: pointer;
+      user-select: none;
+      padding: 0 10px;
+    }
+    #modalPrev {
+      left: 20px;
+    }
+    #modalNext {
+      right: 20px;
+    }
+  </style>
+  <!-- 引入 interact.js 库 -->
+  <script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <!-- 左侧菜单 -->
+    <div class="sidebar">
+      <ul>
+        <li><a href="#" id="menuFile" class="active">本地视频</a></li>
+        <li><a href="#" id="menuStream">多路互联网流</a></li>
+      </ul>
+    </div>
+    <!-- 右侧内容区域 -->
+    <div class="content">
+      <!-- 本地视频区 -->
+      <div id="sectionFile">
+        <form id="fileUploadForm" class="mb-4">
+          <input type="file" id="videoInput" accept="video/*" class="border p-2 rounded">
+          <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded ml-2">上传视频</button>
+          <div id="progressContainer">
+            <div id="progressBar"></div>
+            <span id="progressText">0%</span>
+          </div>
+        </form>
+        <div id="fileAnalyzeSection" class="mb-4 hidden">
+          <input type="text" id="fileObjectInput" placeholder="输入要检测的对象（多个用逗号分隔）" class="border p-2 rounded">
+          <button id="fileAnalyzeButton" class="bg-green-500 text-white px-4 py-2 rounded ml-2">开始识别</button>
+        </div>
+        <div class="video-container mb-4" id="fileVideoContainer">
+          <button id="fileFullScreenButton" class="fullscreen-btn">全屏</button>
+          <div class="fps-display" id="fileFpsDisplay">FPS: 0</div>
+          <div class="canvas-wrapper">
+            <canvas id="fileVideoCanvas"></canvas>
+            <canvas id="fileOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+          </div>
+        </div>
+        <!-- 缩略图容器，位于本地视频播放区下方 -->
+        <div class="thumbnail-container" id="fileThumbnailContainer"></div>
+      </div>
+      <!-- 多路互联网流区 -->
+      <div id="sectionStream" class="hidden">
+        <div class="mb-4 flex gap-2">
+          <button id="addChannelBtn" class="bg-blue-500 text-white px-4 py-2 rounded">新增通道卡片</button>
+          <button id="resetLayoutBtn" class="bg-gray-500 text-white px-4 py-2 rounded">恢复默认布局</button>
+        </div>
+        <div class="card-container" id="multiStreamContainer">
+          <!-- 动态插入卡片 -->
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- 图片预览Modal -->
+  <div id="imageModal" class="hidden">
+    <div id="modalPrev" class="modal-nav">&#9664;</div>
+    <img id="modalImage" src="">
+    <div id="modalNext" class="modal-nav">&#9654;</div>
+  </div>
+  <script>
+    // 定义全局的本地视频 session_id，保证前后端一致
+    const localSessionId = Date.now().toString();
+    // 定义全局的互联网流会话对象，避免未定义错误
+    const stream_sessions = {};
+    // 用于控制本地视频缩略图添加频率
+    let lastThumbnailTime = 0;
+    // 本地视频检测结果存储变量
+    let local_lastDetection = null, local_lastDetectionTimestamp = 0;
+
+    // ========== 菜单切换 ==========
+    const menuFile = document.getElementById('menuFile');
+    const menuStream = document.getElementById('menuStream');
+    const sectionFile = document.getElementById('sectionFile');
+    const sectionStream = document.getElementById('sectionStream');
+
+    menuFile.addEventListener('click', (e) => {
+      e.preventDefault();
+      menuFile.classList.add('active');
+      menuStream.classList.remove('active');
+      sectionFile.classList.remove('hidden');
+      sectionStream.classList.add('hidden');
+    });
+    menuStream.addEventListener('click', (e) => {
+      e.preventDefault();
+      menuStream.classList.add('active');
+      menuFile.classList.remove('active');
+      sectionStream.classList.remove('hidden');
+      sectionFile.classList.add('hidden');
+    });
+
+    // ========== 本地视频逻辑 ==========
+    let local_ws;
+    let localFPSCount = 0, localFPSLastTime = Date.now(), localCurrentFPS = 0;
+
+    function createLocalWS() {
+      const wsUrl = `ws://${window.location.host}/ws?session_id=${localSessionId}`;
+      const ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        console.log("Local video WebSocket connected, session_id:", localSessionId);
+      };
+      ws.onmessage = async (evt) => {
+        let msg;
+        if (typeof evt.data === "string") {
+          msg = JSON.parse(evt.data);
+        } else {
+          const text = await evt.data.text();
+          msg = JSON.parse(text);
+        }
+        localFPSCount++;
+        if (Date.now() - localFPSLastTime >= 1000) {
+          localCurrentFPS = localFPSCount;
+          localFPSCount = 0;
+          localFPSLastTime = Date.now();
+          document.getElementById("fileFpsDisplay").innerText = "FPS: " + localCurrentFPS;
+        }
+        if (msg.image) {
+          const blob = await base64ToBlob(msg.image);
+          if (msg.result && msg.result.bboxes && msg.result.bboxes.length > 0) {
+            local_lastDetection = msg.result;
+            local_lastDetectionTimestamp = Date.now();
+            console.log("Local detection received:", msg.result.bboxes);
+            if (Date.now() - lastThumbnailTime > 3000) {
+              addFileThumbnail();
+              lastThumbnailTime = Date.now();
+            }
+          }
+          drawLocalFrame(blob, local_lastDetection);
+        }
+      };
+      ws.onclose = () => {
+        console.log("Local video WebSocket closed");
+      };
+      ws.onerror = (err) => {
+        console.error("Local video WebSocket error:", err);
+      };
+      local_ws = ws;
+    }
+
+    // 按比例居中绘制视频帧
+    function drawLocalFrame(blob, detection) {
+      createImageBitmap(blob).then((bitmap) => {
+        const canvasW = 640, canvasH = 480;
+        const videoCanvas = document.getElementById("fileVideoCanvas");
+        const overlayCanvas = document.getElementById("fileOverlayCanvas");
+        videoCanvas.width = canvasW;
+        videoCanvas.height = canvasH;
+        overlayCanvas.width = canvasW;
+        overlayCanvas.height = canvasH;
+        const ctx = videoCanvas.getContext("2d");
+        ctx.clearRect(0, 0, canvasW, canvasH);
+        const ratio = Math.min(canvasW / bitmap.width, canvasH / bitmap.height);
+        const newWidth = bitmap.width * ratio;
+        const newHeight = bitmap.height * ratio;
+        const offsetX = (canvasW - newWidth) / 2;
+        const offsetY = (canvasH - newHeight) / 2;
+        ctx.drawImage(bitmap, offsetX, offsetY, newWidth, newHeight);
+        const overlayCtx = overlayCanvas.getContext("2d");
+        overlayCtx.clearRect(0, 0, canvasW, canvasH);
+        if (detection && detection.bboxes && detection.bboxes.length > 0) {
+          if (Date.now() - local_lastDetectionTimestamp > 2000) detection = null;
+          else {
+            detection.bboxes.forEach(det => {
+              if (!det.bbox_2d || det.bbox_2d.length < 4) return;
+              const [x1, y1, x2, y2] = det.bbox_2d;
+              const boxX = offsetX + x1 * ratio;
+              const boxY = offsetY + y1 * ratio;
+              const boxW = (x2 - x1) * ratio;
+              const boxH = (y2 - y1) * ratio;
+              overlayCtx.strokeStyle = "lime";
+              overlayCtx.lineWidth = 2;
+              overlayCtx.font = "14px Arial";
+              overlayCtx.fillStyle = "lime";
+              overlayCtx.strokeRect(boxX, boxY, boxW, boxH);
+              overlayCtx.fillText(det.label, boxX, boxY - 5);
+              console.log("Local detection bbox:", det.bbox_2d, "label:", det.label);
+            });
+          }
+        }
+      }).catch(err => console.error("Error drawing local frame:", err));
+    }
+
+    createLocalWS();
+
+    // 缩略图相关
+    let fileThumbnailList = [];
+    function addFileThumbnail() {
+      if (!local_lastDetection || !local_lastDetection.bboxes || local_lastDetection.bboxes.length === 0) return;
+      // 延时100毫秒再捕获，确保canvas已绘制完成
+      setTimeout(() => {
+        const fileVideoCanvas = document.getElementById('fileVideoCanvas');
+        const dataURL = fileVideoCanvas.toDataURL("image/jpeg", 0.5);
+        const labels = local_lastDetection.bboxes.map(det => det.label);
+        const uniqueLabels = [...new Set(labels)];
+        const labelText = uniqueLabels.join(", ");
+        
+        const thumbnailItem = document.createElement("div");
+        thumbnailItem.className = "thumbnail-item";
+        
+        const img = document.createElement("img");
+        img.src = dataURL;
+        fileThumbnailList.push(dataURL);
+        img.dataset.index = fileThumbnailList.length - 1;
+        img.addEventListener("click", () => {
+          showModal(fileThumbnailList, parseInt(img.dataset.index));
+        });
+        thumbnailItem.appendChild(img);
+        
+        const labelDiv = document.createElement("div");
+        labelDiv.className = "thumbnail-label";
+        labelDiv.innerText = labelText;
+        thumbnailItem.appendChild(labelDiv);
+        
+        const container = document.getElementById('fileThumbnailContainer');
+        container.appendChild(thumbnailItem);
+        
+        while (fileThumbnailList.length > 6) {
+          fileThumbnailList.shift();
+          container.removeChild(container.firstChild);
+        }
+        updateThumbnailIndices(container);
+      }, 100);
+    }
+
+    function updateThumbnailIndices(container) {
+      Array.from(container.children).forEach((child, index) => {
+        const img = child.querySelector('img');
+        if (img) img.dataset.index = index;
+      });
+    }
+
+    let currentModalList = [];
+    let currentModalIndex = 0;
+    function showModal(thumbnailList, index) {
+      currentModalList = thumbnailList;
+      currentModalIndex = index;
+      const modal = document.getElementById("imageModal");
+      const modalImage = document.getElementById("modalImage");
+      modalImage.src = currentModalList[currentModalIndex];
+      modal.classList.remove("hidden");
+    }
+
+    document.getElementById("modalPrev").addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (currentModalList.length === 0) return;
+      currentModalIndex = (currentModalIndex - 1 + currentModalList.length) % currentModalList.length;
+      document.getElementById("modalImage").src = currentModalList[currentModalIndex];
+    });
+    
+    document.getElementById("modalNext").addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (currentModalList.length === 0) return;
+      currentModalIndex = (currentModalIndex + 1) % currentModalList.length;
+      document.getElementById("modalImage").src = currentModalList[currentModalIndex];
+    });
+    
+    document.getElementById("imageModal").addEventListener("click", (e) => {
+      if (e.target.classList.contains("modal-nav")) return;
+      document.getElementById("imageModal").classList.add("hidden");
+    });
+
+    // ========== 文件上传及本地视频识别 ==========
+    document.getElementById('fileUploadForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fileInput = document.getElementById('videoInput');
+      if (fileInput.files.length === 0) {
+        alert("请选择视频文件");
+        return;
+      }
+      const file = fileInput.files[0];
+      const formData = new FormData();
+      formData.append('video', file);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/upload');
+      xhr.upload.onprogress = function (event) {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          document.getElementById('progressBar').style.width = percent + "%";
+          document.getElementById('progressText').innerText = percent + "%";
+        }
+      };
+      xhr.onload = function () {
+        if (xhr.status === 200) {
+          const result = JSON.parse(xhr.responseText);
+          document.getElementById('fileAnalyzeSection').classList.remove('hidden');
+          document.getElementById('fileAnalyzeButton').dataset.filename = result.filename;
+        } else {
+          alert("上传视频失败，请重试");
+        }
+      };
+      xhr.onerror = function () {
+        alert("上传视频失败，请检查网络");
+      };
+      xhr.send(formData);
+    });
+
+    document.getElementById('fileAnalyzeButton').addEventListener('click', async () => {
+      const objectStr = document.getElementById('fileObjectInput').value;
+      if (!objectStr) {
+        alert("请输入要检测的对象");
+        return;
+      }
+      const filename = document.getElementById('fileAnalyzeButton').dataset.filename;
+      if (!filename) {
+        alert("请先上传视频");
+        return;
+      }
+      try {
+        const response = await fetch('/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            session_id: localSessionId, 
+            object_str: objectStr, 
+            filename 
+          })
+        });
+        if (!response.ok) throw new Error("网络响应异常");
+        console.log("本地视频识别已启动");
+      } catch (error) {
+        alert("启动识别失败，请重试");
+      }
+    });
+
+    document.getElementById("fileFullScreenButton").addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFullScreen("fileVideoContainer");
+    });
+
+    function toggleFullScreen(containerId) {
+      const container = document.getElementById(containerId);
+      if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => {
+          alert(`全屏错误: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    function base64ToBlob(base64Data, contentType = 'image/jpeg') {
+      const dataUrl = "data:" + contentType + ";base64," + base64Data;
+      return fetch(dataUrl).then(r => r.blob());
+    }
+  </script>
+  <script>
+    // ========== 多路互联网流相关代码 ==========
+    const fixedCanvasW = 400;
+    const fixedCanvasH = 300;
+    let channelCounter = 0;
+    const containerStream = document.getElementById("multiStreamContainer");
+
+    // 新增卡片和恢复默认布局按钮事件
+    document.getElementById("addChannelBtn").addEventListener("click", () => {
+      addStreamCard();
+    });
+    document.getElementById("resetLayoutBtn").addEventListener("click", () => {
+      resetLayout();
+    });
+
+    // 恢复所有卡片原来排版（删除拖拽、调整尺寸的内联样式）
+    function resetLayout() {
+      const cards = containerStream.querySelectorAll(".stream-card");
+      cards.forEach(card => {
+        card.style.transform = "";
+        card.removeAttribute("data-x");
+        card.removeAttribute("data-y");
+        card.style.width = "";
+        card.style.height = "";
+        const videoWrapper = card.querySelector('.video-wrapper');
+        if (videoWrapper) {
+          const canvas = videoWrapper.querySelector("canvas");
+          if (canvas) {
+            canvas.width = videoWrapper.clientWidth;
+            canvas.height = videoWrapper.clientHeight;
+          }
+        }
+      });
+    }
+
+    function addStreamCard() {
+      channelCounter++;
+      const sessionId = "stream_session_" + Date.now() + "_" + channelCounter;
+      const cardDiv = document.createElement("div");
+      cardDiv.className = "stream-card";
+      // 用于记录流状态：未启动、已启动、暂停
+      cardDiv._streamRunning = false;
+      cardDiv._paused = false;
+      
+      // 卡片头部：显示标题和删除按钮（标题设为可编辑）
+      const headerDiv = document.createElement("div");
+      headerDiv.className = "card-header";
+      
+      const titleEl = document.createElement("div");
+      titleEl.className = "card-title";
+      titleEl.contentEditable = "true";
+      titleEl.innerText = "通道 " + channelCounter;
+      headerDiv.appendChild(titleEl);
+      
+      const btnDelete = document.createElement("button");
+      btnDelete.className = "btn-delete";
+      btnDelete.innerText = "删除";
+      btnDelete.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        try {
+          await stopStream(sessionId, statusDiv);
+        } catch (error) {
+          console.error("Error stopping stream:", error);
+        } finally {
+          cardDiv.remove();
+        }
+      });
+      headerDiv.appendChild(btnDelete);
+      cardDiv.appendChild(headerDiv);
+      
+      // 创建状态显示（离线/在线）--稍后添加到视频播放区域内
+      const statusDiv = document.createElement("div");
+      statusDiv.className = "card-status status-offline";
+      statusDiv.innerText = "离线";
+      
+      // 输入框区域
+      const addrInput = document.createElement("input");
+      addrInput.className = "card-input";
+      addrInput.placeholder = "请输入流地址 (rtsp/rtmp...)";
+      cardDiv.appendChild(addrInput);
+
+      const detectInput = document.createElement("input");
+      detectInput.className = "card-input";
+      detectInput.placeholder = "请输入检测目标(多个用逗号)";
+      cardDiv.appendChild(detectInput);
+
+      // 按钮组，合并拉流/停止和暂停/恢复按钮
+      const btnGroup = document.createElement("div");
+      btnGroup.className = "btn-group";
+      cardDiv.appendChild(btnGroup);
+
+      // 拉流/停止按钮
+      const btnToggleStream = document.createElement("button");
+      // 初始状态使用 btn-start 样式，显示“拉流”
+      btnToggleStream.className = "btn-start";
+      btnToggleStream.innerText = "拉流";
+      btnToggleStream.onclick = async () => {
+        const url = addrInput.value.trim();
+        if (!url) {
+          alert("请先输入流地址");
+          return;
+        }
+        if (!cardDiv._streamRunning) {
+          await startStream(sessionId, url, statusDiv);
+          cardDiv._streamRunning = true;
+          btnToggleStream.className = "btn-stop";
+          btnToggleStream.innerText = "停止";
+          // 启动后使暂停/恢复按钮可用
+          btnTogglePause.disabled = false;
+        } else {
+          await stopStream(sessionId, statusDiv);
+          cardDiv._streamRunning = false;
+          cardDiv._paused = false;
+          btnToggleStream.className = "btn-start";
+          btnToggleStream.innerText = "拉流";
+          // 重置暂停/恢复按钮状态
+          btnTogglePause.className = "btn-pause";
+          btnTogglePause.innerText = "暂停";
+          btnTogglePause.disabled = true;
+        }
+      };
+      btnGroup.appendChild(btnToggleStream);
+
+      // 暂停/恢复按钮
+      const btnTogglePause = document.createElement("button");
+      btnTogglePause.className = "btn-pause";
+      btnTogglePause.innerText = "暂停";
+      btnTogglePause.disabled = true;
+      btnTogglePause.onclick = async () => {
+        if (!cardDiv._paused) {
+          await pauseStream(sessionId);
+          cardDiv._paused = true;
+          btnTogglePause.className = "btn-resume";
+          btnTogglePause.innerText = "恢复";
+        } else {
+          await resumeStream(sessionId);
+          cardDiv._paused = false;
+          btnTogglePause.className = "btn-pause";
+          btnTogglePause.innerText = "暂停";
+        }
+      };
+      btnGroup.appendChild(btnTogglePause);
+
+      // AI识别按钮（原“检测”按钮，更名为“AI识别”）
+      const btnDetect = document.createElement("button");
+      btnDetect.className = "btn-detect";
+      btnDetect.innerText = "AI识别";
+      btnDetect.onclick = () => {
+        const objs = detectInput.value.trim();
+        if (objs) setAnalyze(sessionId, objs);
+      };
+      btnGroup.appendChild(btnDetect);
+
+      // 播放区域：video-wrapper填满卡片内容宽度，保持4:3比例
+      const videoWrapper = document.createElement("div");
+      videoWrapper.className = "video-wrapper";
+      const canvas = document.createElement("canvas");
+      canvas.width = fixedCanvasW;
+      canvas.height = fixedCanvasH;
+      canvas.style.backgroundColor = "#000";
+      videoWrapper.appendChild(canvas);
+      
+      // 将FPS显示和状态显示添加到视频播放区域内（分别位于左上和右上）
+      const fpsDiv = document.createElement("div");
+      fpsDiv.className = "card-fps";
+      fpsDiv.innerText = "FPS: 0";
+      videoWrapper.appendChild(fpsDiv);
+      videoWrapper.appendChild(statusDiv);
+      
+      cardDiv.appendChild(videoWrapper);
+      containerStream.appendChild(cardDiv);
+
+      cardDiv._sessionId = sessionId;
+      cardDiv._statusDiv = statusDiv;
+      cardDiv._canvas = canvas;
+      cardDiv._ctx = canvas.getContext("2d");
+      cardDiv._fpsDisplay = fpsDiv;
+      cardDiv._fpsCount = 0;
+      cardDiv._fpsLastTime = Date.now();
+      cardDiv._currentFPS = 0;
+      cardDiv._lastDetection = null;
+      cardDiv._lastDetectionTimestamp = 0;
+      
+      // 启用拖拽和调整尺寸（使用 interact.js）
+      interact(cardDiv)
+        .draggable({
+          inertia: true,
+          modifiers: [
+            interact.modifiers.restrictRect({
+              restriction: 'parent',
+              endOnly: true
+            })
+          ],
+          listeners: {
+            move (event) {
+              const target = event.target;
+              let x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
+              let y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
+              target.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
+              target.setAttribute('data-x', x);
+              target.setAttribute('data-y', y);
+            }
+          }
+        })
+        .resizable({
+          edges: { left: true, right: true, bottom: true, top: true },
+          modifiers: [
+            interact.modifiers.restrictSize({
+              min: { width: 350, height: 300 }
+            })
+          ],
+          inertia: true,
+          listeners: {
+            move (event) {
+              const target = event.target;
+              let x = (parseFloat(target.getAttribute('data-x')) || 0);
+              let y = (parseFloat(target.getAttribute('data-y')) || 0);
+              target.style.width = event.rect.width + 'px';
+              target.style.height = event.rect.height + 'px';
+              x += event.deltaRect.left;
+              y += event.deltaRect.top;
+              target.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
+              target.setAttribute('data-x', x);
+              target.setAttribute('data-y', y);
+              const videoWrapper = target.querySelector('.video-wrapper');
+              if (videoWrapper) {
+                videoWrapper.style.width = "100%";
+                const canvas = videoWrapper.querySelector("canvas");
+                if (canvas) {
+                  canvas.width = videoWrapper.clientWidth;
+                  canvas.height = videoWrapper.clientHeight;
+                }
+              }
+            }
+          }
+        });
+    }
+
+    async function startStream(session_id, stream_url, statusEl) {
+      try {
+        const res = await fetch("/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id, stream_url })
+        });
+        const result = await res.json();
+        console.log("startStream:", result);
+        if (result.status === "success") {
+          createStreamWS(session_id, statusEl);
+        } else {
+          alert(result.message || "启动拉流失败");
+        }
+      } catch (e) {
+        console.error(e);
+        alert("拉流请求失败");
+      }
+    }
+
+    async function pauseStream(session_id) {
+      try {
+        const res = await fetch("/stream/pause", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id })
+        });
+        const r = await res.json();
+        console.log("pauseStream:", r);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function resumeStream(session_id) {
+      try {
+        const res = await fetch("/stream/resume", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id })
+        });
+        const r = await res.json();
+        console.log("resumeStream:", r);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function stopStream(session_id, statusEl) {
+      try {
+        const res = await fetch("/stream/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id })
+        });
+        const r = await res.json();
+        console.log("stopStream:", r);
+        statusEl.innerText = "离线";
+        statusEl.classList.remove("status-live");
+        statusEl.classList.add("status-offline");
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function setAnalyze(session_id, object_str) {
+      try {
+        const res = await fetch("/stream/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id, object_str })
+        });
+        const r = await res.json();
+        console.log("setAnalyze:", r);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function createStreamWS(session_id, statusEl) {
+      const wsProto = (location.protocol === "https:") ? "wss:" : "ws:";
+      const wsUrl = `${wsProto}//${window.location.host}/ws/stream?session_id=${session_id}`;
+      const ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        console.log("WebSocket connected for session:", session_id);
+        statusEl.innerText = "Live";
+        statusEl.classList.remove("status-offline");
+        statusEl.classList.add("status-live");
+      };
+      ws.onmessage = async (evt) => {
+        let msg;
+        if (typeof evt.data === "string") {
+          msg = JSON.parse(evt.data);
+        } else {
+          const text = await evt.data.text();
+          msg = JSON.parse(text);
+        }
+        if (msg.image) {
+          const blob = await base64ToBlob(msg.image);
+          const card = findCardBySession(session_id);
+          if (card) {
+            card._fpsCount++;
+            const now = Date.now();
+            if (now - card._fpsLastTime >= 1000) {
+              card._currentFPS = card._fpsCount;
+              card._fpsCount = 0;
+              card._fpsLastTime = now;
+              if (card._fpsDisplay) {
+                card._fpsDisplay.innerText = "FPS: " + card._currentFPS;
+              }
+            }
+            if (msg.result && msg.result.bboxes && msg.result.bboxes.length > 0) {
+              card._lastDetection = msg.result;
+              card._lastDetectionTimestamp = Date.now();
+              console.log("Stream detection received for session", session_id, msg.result.bboxes);
+            }
+            drawStreamFrame(card, blob, card._lastDetection);
+          }
+        }
+      };
+      ws.onclose = () => {
+        console.log("WebSocket closed for session:", session_id);
+      };
+      ws.onerror = (err) => {
+        console.error("WebSocket error:", err);
+      };
+      stream_sessions[session_id] = ws;
+    }
+
+    function findCardBySession(session_id) {
+      const cards = containerStream.querySelectorAll(".stream-card");
+      for (const c of cards) {
+        if (c._sessionId === session_id) return c;
+      }
+      return null;
+    }
+
+    // 按比例居中绘制视频帧
+    function drawStreamFrame(card, blob, detection) {
+      createImageBitmap(blob).then((bitmap) => {
+        const canvasW = card._canvas.width;
+        const canvasH = card._canvas.height;
+        const ctx = card._ctx;
+        ctx.clearRect(0, 0, canvasW, canvasH);
+        const ratio = Math.min(canvasW / bitmap.width, canvasH / bitmap.height);
+        const newWidth = bitmap.width * ratio;
+        const newHeight = bitmap.height * ratio;
+        const offsetX = (canvasW - newWidth) / 2;
+        const offsetY = (canvasH - newHeight) / 2;
+        ctx.drawImage(bitmap, offsetX, offsetY, newWidth, newHeight);
+        if (detection && detection.bboxes && detection.bboxes.length > 0) {
+          if (Date.now() - card._lastDetectionTimestamp > 1200) detection = null;
+          else {
+            detection.bboxes.forEach(det => {
+              if (!det.bbox_2d || det.bbox_2d.length < 4) return;
+              const [x1, y1, x2, y2] = det.bbox_2d;
+              const boxX = offsetX + x1 * ratio;
+              const boxY = offsetY + y1 * ratio;
+              const boxW = (x2 - x1) * ratio;
+              const boxH = (y2 - y1) * ratio;
+              ctx.strokeStyle = "lime";
+              ctx.lineWidth = 2;
+              ctx.font = "14px Arial";
+              ctx.fillStyle = "lime";
+              ctx.strokeRect(boxX, boxY, boxW, boxH);
+              ctx.fillText(det.label, boxX, boxY - 5);
+            });
+          }
+        }
+      }).catch(err => console.error("Error drawing stream frame:", err));
+    }
+  </script>
+</body>
+</html>
