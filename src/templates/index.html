@@ -48,6 +48,24 @@
       </div>
       <!-- 多路互联网流区 -->
       <div id="sectionStream" class="hidden">
+        <!-- 新增筛选面板 -->
+        <div class="mb-4 flex gap-2 items-center">
+          <label class="flex items-center gap-1">
+            通道名筛选:
+            <input type="text" id="channelNameFilter" class="border p-1 rounded" placeholder="输入通道名">
+          </label>
+          <label class="flex items-center gap-1">
+            状态筛选:
+            <select id="statusFilter" class="border p-1 rounded">
+              <option value="">全部</option>
+              <option value="live">在线</option>
+              <option value="offline">离线</option>
+            </select>
+          </label>
+          <button id="applyFilterBtn" class="bg-green-500 text-white px-4 py-2 rounded">筛选</button>
+          <button id="clearFilterBtn" class="bg-gray-500 text-white px-4 py-2 rounded">清除筛选</button>
+        </div>
+        <!-- 原有按钮组 -->
         <div class="mb-4 flex gap-2">
           <button id="addChannelBtn" class="bg-blue-500 text-white px-4 py-2 rounded">新增通道卡片</button>
           <button id="resetLayoutBtn" class="bg-gray-500 text-white px-4 py-2 rounded">恢复默认布局</button>
@@ -62,8 +80,7 @@
     <img id="modalImage" src="">
     <div id="modalNext" class="modal-nav">&#9654;</div>
   </div>
-
-  <!-- 拆分的JS文件（顺序很重要） -->
+  <!-- 引入拆分的JS文件（顺序很重要） -->
   <script src="/static/js/local.js"></script>
   <script src="/static/js/stream.js"></script>
   <script src="/static/js/main.js"></script>

@@ -407,3 +407,70 @@ function drawStreamFrame(card, blob, detection) {
     }
   }).catch(err => console.error("Error drawing stream frame:", err));
 }
+
+// ====== 以下为多路互联网流卡片筛选功能 ======
+
+// 筛选函数：遍历所有流卡片，判断是否显示
+function filterStreamCards() {
+  const channelNameFilter = document.getElementById('channelNameFilter').value.trim().toLowerCase();
+  const statusFilter = document.getElementById('statusFilter').value; // 值为 ""、"live" 或 "offline"
+
+  // 遍历 containerStream 内所有卡片
+  const cards = containerStream.querySelectorAll(".stream-card");
+  cards.forEach(card => {
+    // 获取通道名称（假设标题在 .card-title 内）
+    const titleEl = card.querySelector('.card-title');
+    const channelName = titleEl ? titleEl.innerText.trim().toLowerCase() : "";
+
+    // 获取状态（假设状态在 .card-status 内，状态文字 "Live" 表示在线，"离线" 表示离线）
+    const statusEl = card.querySelector('.card-status');
+    let cardStatus = "";
+    if (statusEl) {
+      // 可根据实际情况调整判断（例如 "Live" 表示在线）
+      cardStatus = statusEl.innerText.trim().toLowerCase();
+      // 统一转换为 "live" 或 "offline"
+      if (cardStatus === "live") {
+        cardStatus = "live";
+      } else {
+        cardStatus = "offline";
+      }
+    }
+
+    // 判断是否满足筛选条件
+    let show = true;
+    if (channelNameFilter && !channelName.includes(channelNameFilter)) {
+      show = false;
+    }
+    if (statusFilter && cardStatus !== statusFilter) {
+      show = false;
+    }
+    // 显示或隐藏卡片
+    card.style.display = show ? "" : "none";
+  });
+}
+
+// 清除筛选：将筛选输入框置空，同时显示所有卡片
+function clearStreamFilters() {
+  document.getElementById('channelNameFilter').value = "";
+  document.getElementById('statusFilter').value = "";
+  // 恢复显示所有卡片
+  const cards = containerStream.querySelectorAll(".stream-card");
+  cards.forEach(card => {
+    card.style.display = "";
+  });
+}
+
+// 绑定筛选按钮事件
+document.getElementById('applyFilterBtn').addEventListener('click', () => {
+  filterStreamCards();
+});
+
+// 绑定清除筛选按钮事件
+document.getElementById('clearFilterBtn').addEventListener('click', () => {
+  clearStreamFilters();
+});
+
+// 也可以为筛选输入框绑定键盘事件（例如回车键）
+// document.getElementById('channelNameFilter').addEventListener('keyup', (e) => {
+//   if (e.key === 'Enter') filterStreamCards();
+// });
