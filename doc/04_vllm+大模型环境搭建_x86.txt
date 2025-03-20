@@ -25,7 +25,7 @@ NVIDIA和CUDA 版本的选择，以torch和vllm能支持的版本为主选择，
     https://my.oschina.net/openeuler/blog/17531185
 
     # 安装必要依赖
-    sudo dnf install -y kernel-devel kernel-headers gcc make cmake git python3-devel
+    sudo dnf install -y kernel-devel kernel-headers gcc make cmake git python3-devel tar zip
     sudo dnf groupinstall -y "Development Tools"
 
 2.1 安装 NVIDIA 驱动（适配 openEuler 24.03）
