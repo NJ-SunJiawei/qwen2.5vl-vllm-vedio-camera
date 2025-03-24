@@ -1,0 +1,136 @@
+1、安装通用依赖
+    yum update
+    dnf groupinstall -y "Development Tools"
+    yum install -y gcc g++ cmake make python-pip python3-devel ninja-build.aarch64 numactl-devel.aarch64 wget git
+    dnf install -y kernel-devel kernel-headers  tar zip pciutils
+
+2、安装conda
+   Linux 用户，可以下载 Anaconda3-2022.05-Linux-aarch64.sh
+   wget https://repo.anaconda.com/archive/Anaconda3-2022.05-Linux-aarch64.sh
+   # 先进行 conda 的安装:
+   bash Anaconda3-2022.05-Linux-aarch64.sh
+   source ~/.bashrc
+   conda --version
+
+   #让 conda shell 环境常驻(不常使用不推荐):
+   eval "$(~/anaconda3/bin/conda shell.bash hook)"
+
+   #国内用户，推荐在使用 Conda 时，先进行软件源配置操作：
+   vi ~/.condarc
+   '''
+channels:
+ - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free/
+ - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/
+ - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/pytorch/
+ - defaults
+show_channel_urls: true
+   '''
+   完成了 ~/.condarc 的内容修改之后，先重启 Shell，接着使用 conda info 就可以检查软件源是否配置成功了
+   conda info
+
+   #手动激活 conda shell
+   conda create -n torch python=3.11 -y
+   
+   #激活和退出专用环境：
+   conda activate torch
+   conda deactivate
+   conda list                  当前env基础环境
+   conda list -n torch
+   conda env list              env列表
+   conda activate base
+   conda env remove -n torch   删除env
+   conda remove -n torch --all 
+   conda install --use-local xxxx.tar.bz2(xxxx.tar.bz2是包的绝对路径) 安装离线py包
+   
+   #当完成环境激活之后，我们同样先来完成pip软件源的切换
+   pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+3、安装安装 NVIDIA 驱动
+   # 禁用nouveau驱动
+    echo "blacklist nouveau" | sudo tee /etc/modprobe.d/blacklist-nouveau.conf
+    sudo dracut --force
+
+    https://www.nvidia.com/en-us/drivers/
+    wget https://us.download.nvidia.com/tesla/560.35.03/NVIDIA-Linux-aarch64-560.35.03.run
+    sh NVIDIA-Linux-aarch64-560.35.03.run --kernel-source-path /usr/src/kernels/5.10.0-136.108.0.188.oe2203sp1.aarch64
+
+    # 验证驱动
+    nvidia-smi
+
+    #驱动卸载 https://cloud.tencent.com/document/product/560/111921
+    nvidia-installer --uninstall -s
+    lsmod | grep nvidia 检查驱动是否卸载干净
+    fuser -k /dev/nvidia*; rmmod nvidia_modeset; rmmod nvidia_drm; rmmod nvidia_uvm; rmmod nvidia;
+
+4、安装 CUDA 12.6
+   wget https://developer.download.nvidia.com/compute/cuda/12.6.0/local_installers/cuda_12.6.0_560.28.03_linux_sbsa.run
+   sh cuda_12.6.0_560.28.03_linux_sbsa.run --tmpdir=/usr/tmp2
+
+    echo查看$PATH和$LD_LIBRARY_PATH和$CUDA_HOME变量
+
+    # 常规添加环境变量
+    echo 'export PATH=/usr/local/cuda-12.6/bin:$PATH' >> ~/.bashrc
+    echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
+    echo 'export CUDA_HOME=/usr/local/cuda-12.6:$CUDA_HOME' >> ~/.bashrc
+    source ~/.bashrc
+
+    #部分容器环境需要使用下面：
+    echo 'export PATH=/usr/local/cuda-12.6/bin' >> ~/.bashrc
+    echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64' >> ~/.bashrc
+    echo 'export CUDA_HOME=/usr/local/cuda-12.6' >> ~/.bashrc
+    source ~/.bashrc
+
+    #部分VM环境需要使用下面：✔✔✔
+    echo 'export PATH=/usr/local/cuda-12.6/bin:$PATH' >> ~/.bashrc
+    echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64' >> ~/.bashrc
+    echo 'export CUDA_HOME=/usr/local/cuda-12.6' >> ~/.bashrc
+    source ~/.bashrc
+
+    安装完后再次确认 nvidia-smi 可用
+
+5、安装依赖： torch depends：pip --default-timeout=1000  install numpy -i https://mirrors.huaweicloud.com/repository/pypi/simple
+              vllm depends： pip --default-timeout=1000 install setuptools_scm  -i https://mirrors.huaweicloud.com/repository/pypi/simple
+                             yum install kmod
+                             cmake源码安装（注意版本> 3.26.0）：
+                               wget https://cmake.org/files/v3.26/cmake-3.26.6-linux-aarch64.sh
+                               sh cmake-3.26.6-linux-aarch64.sh
+                               mv cmake-3.26.6-linux-aarch64 /opt/cmake-3.26.6
+                               ln -sf /opt/cmake-3.26.6/bin/*  /usr/bin
+                             其他版本：
+                               wget https://github.com/Kitware/CMake/releases/download/v3.31.2/cmake-3.31.2-linux-aarch64.sh
+
+6、安装torch-2.6.0
+    #版本选择：https://download.pytorch.org/whl/cu126/torch/
+               https://download.pytorch.org/whl/nightly/cu126
+    选择合适的cuda版本和python版本
+    wget https://download.pytorch.org/whl/cu126/torch-2.6.0%2Bcu126-cp311-cp311-linux_aarch64.whl#sha256=d4809b188f5c9b9753f7578085b79ae1f5d9c36a3fffc122e83e446ecf251325 
+    pip --default-timeout=1000 install torch-2.6.0+cu126-cp311-cp311-linux_aarch64.whl -i https://mirrors.huaweicloud.com/repository/pypi/simple
+
+    # 验证GPU支持
+    python -c "import torch; print(torch.cuda.device_count())"
+    python -c "import torch; print(torch.__version__); print(torch.__path__)"
+
+    UserWarning: Can't initialize NVML
+      warnings.warn("Can't initialize NVML")
+    重新安装nvidia驱动
+
+
+7、安装vllm （会占用很多CPU和内存 free -h）
+    git clone https://github.com/vllm-project/vllm.git
+    cd vllm
+    python use_existing_torch.py
+    ###新版不需要执行：pip --default-timeout=1000 install -r requirements-build.txt -i https://mirrors.huaweicloud.com/repository/pypi/simple
+    MAX_JOBS=3 pip install -e . --no-build-isolation -i https://mirrors.huaweicloud.com/repository/pypi/simple
+    MAX_JOBS=4大概需要12~16G内存
+    #VLLM_TARGET_DEVICE=cuda（不配置默认GPU版本）
+    #VLLM_TARGET_DEVICE=cpu
+    有时候安装会失败，由于git clone下载依赖repo失败，多试几次或者翻墙
+
+    nvcc error   : '"$CICC_PATH/cicc"' died due to signal 9 (Kill signal)
+    Failed to compute shorthash for libnvrtc.so
+
+
+
+
+
+
