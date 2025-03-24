@@ -120,17 +120,18 @@ show_channel_urls: true
     cd vllm
     python use_existing_torch.py
     ###新版不需要执行：pip --default-timeout=1000 install -r requirements-build.txt -i https://mirrors.huaweicloud.com/repository/pypi/simple
-    MAX_JOBS=3 pip install -e . --no-build-isolation -i https://mirrors.huaweicloud.com/repository/pypi/simple
+    MAX_JOBS=3 pip --default-timeout=1000 install -e . --no-build-isolation -i https://mirrors.huaweicloud.com/repository/pypi/simple
+    或者 MAX_JOBS=3 pip --default-timeout=1000 install -e . --no-build-isolation -i https://pypi.tuna.tsinghua.edu.cn/simple
     MAX_JOBS=4大概需要12~16G内存
     #VLLM_TARGET_DEVICE=cuda（不配置默认GPU版本）
     #VLLM_TARGET_DEVICE=cpu
     有时候安装会失败，由于git clone下载依赖repo失败，多试几次或者翻墙
 
-    nvcc error   : '"$CICC_PATH/cicc"' died due to signal 9 (Kill signal)
-    Failed to compute shorthash for libnvrtc.so
-
-
-
+    1、Failed to compute shorthash for libnvrtc.so
+       ====》https://github.com/pytorch/pytorch/issues/53350
+       ====》貌似可以忽略
+    2、nvcc error   : '"$CICC_PATH/cicc"' died due to signal 9 (Kill signal)
+       ====》MAX_JOBS太大，导致内存不足，改成MAX_JOBS=2或者放大内存
 
 
 
