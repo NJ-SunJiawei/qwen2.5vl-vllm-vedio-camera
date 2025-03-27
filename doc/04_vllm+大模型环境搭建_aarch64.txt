@@ -208,12 +208,14 @@ show_channel_urls: true
        python setup.py install --cmake
        # 或者 编译成 whl安装文件，编译成功后在dist文件下面，可通过 pip install torch-xxxx.whl 安装
        python setup.py bdist_wheel --cmake
+       # 后台打印
+       nohup python setup.py bdist_wheel --cmake > build.log 2>&1 &
 
        export CMAKE_CUDA_ARCHITECTURES=native #自动检测本地 GPU 架构：CMake 会通过检测当前机器的 GPU 型号，自动选择对应的计算能力（如 sm_86）。仅编译本地 GPU 支持的代码：生成的二进制文件仅包含当前机器 GPU 架构的代码，无法在其他架构 GPU 上高效运行。
        export USE_QNNPACK=1    # 建议启用（ARM cpu量化优化）
        export USE_XNNPACK=1    # 建议启用（ARM cpu通用优化）
        export USE_CUDA=1：用于设置一个名为 USE_CUDA 的环境变量，并将其值设置为 1。可能用于告知后续的脚本或程序，在构建过程中需要使用 CUDA 进行加速或其他相关操作。
-       export MAX_JOBS=4：设置一个名为 MAX_JOBS 的环境变量，并将其值设置为 4，可能用于指定并行编译任务的最大数量。这个按机器进行设置，太大了容易崩溃。
+       export MAX_JOBS=4：（4~推荐32G内存）设置一个名为 MAX_JOBS 的环境变量，并将其值设置为 4，可能用于指定并行编译任务的最大数量。这个按机器进行设置，太大了容易崩溃。
        export USE_SYSTEM_NCCL=ON：设置一个环境变量 USE_SYSTEM_NCCL 的值为 ON，表明使用系统中已安装的 NCCL 库。
        export USE_DISTRIBUTED=1 :PyTorch 会启用分布式训练支持
           export USE_DISTRIBUTED=1    # 启用分布式支持（必须）
