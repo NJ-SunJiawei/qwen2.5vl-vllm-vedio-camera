@@ -1,3 +1,11 @@
+#查看显卡支持算力（sm）：https://developer.nvidia.com/cuda-gpus ✔✔✔
+#查看CUDA库支持的算力（sm）：nvcc --list-gpu-arch ✔✔✔
+#参考：https://docs.nvidia.com/cuda/ampere-compatibility-guide/index.html
+nvidia-smi -L  查看GPU类型
+
+#pytorch,torchvision,torchaudio以及它们之间的版本对应关系
+#参考：#https://blog.csdn.net/toopoo/article/details/124825357
+
 1、安装通用依赖
     yum update
     dnf groupinstall -y "Development Tools"
@@ -8,6 +16,8 @@
    Linux 用户，可以下载 Anaconda3-2022.05-Linux-aarch64.sh
    wget https://repo.anaconda.com/archive/Anaconda3-2022.05-Linux-aarch64.sh
    # 先进行 conda 的安装:
+   #yum install gtk3-devel 
+   #apt-get install libgtk-3-dev
    bash Anaconda3-2022.05-Linux-aarch64.sh
    source ~/.bashrc
    conda --version
@@ -45,7 +55,7 @@ show_channel_urls: true
    #当完成环境激活之后，我们同样先来完成pip软件源的切换
    pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
-3、安装安装 NVIDIA 驱动
+3、安装安装 NVIDIA 驱动(驱动版本可以大于CUDA版本)
    # 禁用nouveau驱动
     echo "blacklist nouveau" | sudo tee /etc/modprobe.d/blacklist-nouveau.conf
     sudo dracut --force
@@ -63,59 +73,160 @@ show_channel_urls: true
     fuser -k /dev/nvidia*; rmmod nvidia_modeset; rmmod nvidia_drm; rmmod nvidia_uvm; rmmod nvidia;
 
 4、安装 CUDA 12.6
-   wget https://developer.download.nvidia.com/compute/cuda/12.6.0/local_installers/cuda_12.6.0_560.28.03_linux_sbsa.run
-   sh cuda_12.6.0_560.28.03_linux_sbsa.run --tmpdir=/usr/tmp2
+    wget https://developer.download.nvidia.com/compute/cuda/12.6.0/local_installers/cuda_12.6.0_560.28.03_linux_sbsa.run
+    sh cuda_12.6.0_560.28.03_linux_sbsa.run --tmpdir=/usr/tmp2
 
     echo查看$PATH和$LD_LIBRARY_PATH和$CUDA_HOME变量
 
+    #有些会有ln链接
+    lrwxrwxrwx  1 root root   21 Mar 26 08:44 cuda -> /usr/local/cuda-12.6/
+    drwxr-xr-x 14 root root 4096 Mar 26 08:46 cuda-12.6
+
     # 常规添加环境变量
-    echo 'export PATH=/usr/local/cuda-12.6/bin:$PATH' >> ~/.bashrc
-    echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
-    echo 'export CUDA_HOME=/usr/local/cuda-12.6:$CUDA_HOME' >> ~/.bashrc
+    echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
+    echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
+    echo 'export CUDA_HOME=/usr/local/cuda:$CUDA_HOME' >> ~/.bashrc
     source ~/.bashrc
 
     #部分容器环境需要使用下面：
-    echo 'export PATH=/usr/local/cuda-12.6/bin' >> ~/.bashrc
-    echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64' >> ~/.bashrc
-    echo 'export CUDA_HOME=/usr/local/cuda-12.6' >> ~/.bashrc
+    echo 'export PATH=/usr/local/cuda/bin' >> ~/.bashrc
+    echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64' >> ~/.bashrc
+    echo 'export CUDA_HOME=/usr/local/cuda' >> ~/.bashrc
     source ~/.bashrc
 
     #部分VM环境需要使用下面：✔✔✔
-    echo 'export PATH=/usr/local/cuda-12.6/bin:$PATH' >> ~/.bashrc
-    echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64' >> ~/.bashrc
-    echo 'export CUDA_HOME=/usr/local/cuda-12.6' >> ~/.bashrc
+    echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
+    echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64' >> ~/.bashrc
+    echo 'export CUDA_HOME=/usr/local/cuda' >> ~/.bashrc
     source ~/.bashrc
 
     安装完后再次确认 nvidia-smi 可用
 
-5、安装依赖： torch depends：pip --default-timeout=1000  install numpy -i https://mirrors.huaweicloud.com/repository/pypi/simple
+5、安装依赖： 
+               cmake源码安装（注意版本> 3.26.0）：
+                   wget https://cmake.org/files/v3.26/cmake-3.26.6-linux-aarch64.sh
+                   sh cmake-3.26.6-linux-aarch64.sh
+                   mv cmake-3.26.6-linux-aarch64 /opt/cmake-3.26.6
+                   ln -sf /opt/cmake-3.26.6/bin/*  /usr/bin
+                   其他版本：
+                   wget https://github.com/Kitware/CMake/releases/download/v3.31.2/cmake-3.31.2-linux-aarch64.sh
+              torch depends：pip --default-timeout=1000  install numpy -i https://mirrors.huaweicloud.com/repository/pypi/simple
               vllm depends： pip --default-timeout=1000 install setuptools_scm  -i https://mirrors.huaweicloud.com/repository/pypi/simple
                              yum install kmod
-                             cmake源码安装（注意版本> 3.26.0）：
-                               wget https://cmake.org/files/v3.26/cmake-3.26.6-linux-aarch64.sh
-                               sh cmake-3.26.6-linux-aarch64.sh
-                               mv cmake-3.26.6-linux-aarch64 /opt/cmake-3.26.6
-                               ln -sf /opt/cmake-3.26.6/bin/*  /usr/bin
-                             其他版本：
-                               wget https://github.com/Kitware/CMake/releases/download/v3.31.2/cmake-3.31.2-linux-aarch64.sh
 
-6、安装torch-2.6.0
+
+6、安装torch-2.6.0（supports CUDA capabilities sm_50 sm_80 sm_86 sm_89 sm_90 sm_90a，不适配T4卡 sm_75，查看GPU的 compute capability）
+    #查看显卡支持算力：https://developer.nvidia.com/cuda-gpus
     #版本选择：https://download.pytorch.org/whl/cu126/torch/
                https://download.pytorch.org/whl/nightly/cu126
     选择合适的cuda版本和python版本
     wget https://download.pytorch.org/whl/cu126/torch-2.6.0%2Bcu126-cp311-cp311-linux_aarch64.whl#sha256=d4809b188f5c9b9753f7578085b79ae1f5d9c36a3fffc122e83e446ecf251325 
     pip --default-timeout=1000 install torch-2.6.0+cu126-cp311-cp311-linux_aarch64.whl -i https://mirrors.huaweicloud.com/repository/pypi/simple
+    pip  uninstall torch-2.6.0+cu126-cp311-cp311-linux_aarch64.whl
 
     # 验证GPU支持
     python -c "import torch; print(torch.cuda.device_count())"
     python -c "import torch; print(torch.__version__); print(torch.__path__)"
 
-    UserWarning: Can't initialize NVML
+    '''
+    import torch
+    print(torch.__version__)
+    print(torch.cuda.is_available())
+    print(torch.cuda.get_device_name(0))
+    print(torch.cuda.get_arch_list())  # 应包含 sm_75
+    '''
+
+
+    1、UserWarning: Can't initialize NVML
       warnings.warn("Can't initialize NVML")
     重新安装nvidia驱动
 
 
-7、安装vllm （会占用很多CPU和内存 free -h）
+    2、Tesla T4 with CUDA capability sm_75 is not compatible with the current PyTorch installation.
+    The current PyTorch install supports CUDA capabilities sm_50 sm_80 sm_86 sm_89 sm_90 sm_90a.
+    #https://github.com/pytorch/pytorch/issues/16733 重新从源码编译 ✔✔✔
+    #https://blog.csdn.net/air__Heaven/article/details/134848423 编译参考
+    1) 安装驱动和cuda (cuda还用12.6)
+    2）安装magma加速 https://anaconda.org/pytorch/repo
+        #conda install mkl mkl-include 没用 CPU 数学加速（Intel 优化）
+        #pip install mkl-static mkl-include 没用 CPU 数学加速（Intel 优化）
+        wget https://anaconda.org/pytorch/magma-cuda126/2.6.1/download/linux-64/magma-cuda126-2.6.1-1.tar.bz2
+        conda install  --use-local  magma-cuda126-2.6.1-1.tar.bz2
+
+    2) 安装 cuDNN #https://blog.csdn.net/YY007H/article/details/134772564
+       下载页面 #https://developer.nvidia.com/rdp/cudnn-archive
+        # 解压 cuDNN 包（以 cuDNN 8.9.7 为例）网页下载
+        https://developer.nvidia.com/downloads/compute/cudnn/secure/8.9.7/local_installers/12.x/cudnn-linux-sbsa-8.9.7.29_cuda12-archive.tar.xz/
+        tar -xvf cudnn-linux-sbsa-8.9.7.29_cuda12-archive.tar.xz
+
+        # 复制文件到 CUDA 目录
+           #有些会有ln链接
+           lrwxrwxrwx  1 root root   21 Mar 26 08:44 cuda -> /usr/local/cuda-12.6/
+           drwxr-xr-x 14 root root 4096 Mar 26 08:46 cuda-12.6
+        cp -r cudnn-*-archive/include/* /usr/local/cuda/include/
+        cp -r cudnn-*-archive/lib/* /usr/local/cuda/lib64/
+
+        # 更新动态链接库缓存
+        ldconfig
+        #检查版本
+        cat /usr/local/cuda/include/cudnn_version.h | grep CUDNN_MAJOR -A 2
+
+    2) 安装nccl #https://blog.csdn.net/Scenery0519/article/details/128081062
+        下载页面 https://developer.nvidia.com/nccl/nccl-legacy-downloads
+           tar -xvf nccl_2.24.3-1+cuda12.6_aarch64.txz
+           cp -r nccl_*/lib/* /usr/local/cuda/lib64/
+           cp nccl_*/include/* /usr/local/cuda/include/
+
+    3) cmake源码安装（注意版本> 3.26.0）
+    3) conda install ninja #cmake
+
+    4) git clone --recursive https://github.com/pytorch/pytorch
+       cd pytorch
+       git checkout v2.6.0
+       #递归下载其中的链接包
+       git submodule sync
+       git submodule update --init --recursive
+       export USE_DISTRIBUTED=1
+       export USE_CUDA=1
+       export USE_NCCL=1
+       export USE_SYSTEM_NCCL=ON
+       export MAX_JOBS=4
+       export CUDA_PATH=${CUDA_HOME}
+       export CUDA_BIN_PATH=${CUDA_PATH}/bin
+       export CMAKE_CUDA_COMPILER=${CUDA_BIN_PATH}/nvcc
+       export CUDNN_LIBRARY_PATH=${CUDA_PATH}/lib64
+       export CUDNN_INCLUDE_PATH=${CUDA_PATH}/include
+       export CMAKE_PREFIX_PATH="${CONDA_PREFIX:-'$(dirname $(which conda))/../'}:${CMAKE_PREFIX_PATH}"
+       export TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9;9.0"
+       export CMAKE_CUDA_ARCHITECTURES="75;80;86;89;90"
+       pip  --default-timeout=1000 install -r requirements.txt -i https://mirrors.huaweicloud.com/repository/pypi/simple
+       # 清理安装
+       python setup.py clean
+       # 直接安装
+       python setup.py install --cmake
+       # 使用 ninja 加速编译：
+       python setup.py install --cmake
+       # 或者 编译成 whl安装文件，编译成功后在dist文件下面，可通过 pip install torch-xxxx.whl 安装
+       python setup.py bdist_wheel --cmake
+
+       export CMAKE_CUDA_ARCHITECTURES=native #自动检测本地 GPU 架构：CMake 会通过检测当前机器的 GPU 型号，自动选择对应的计算能力（如 sm_86）。仅编译本地 GPU 支持的代码：生成的二进制文件仅包含当前机器 GPU 架构的代码，无法在其他架构 GPU 上高效运行。
+       export USE_QNNPACK=1    # 建议启用（ARM cpu量化优化）
+       export USE_XNNPACK=1    # 建议启用（ARM cpu通用优化）
+       export USE_CUDA=1：用于设置一个名为 USE_CUDA 的环境变量，并将其值设置为 1。可能用于告知后续的脚本或程序，在构建过程中需要使用 CUDA 进行加速或其他相关操作。
+       export MAX_JOBS=4：设置一个名为 MAX_JOBS 的环境变量，并将其值设置为 4，可能用于指定并行编译任务的最大数量。这个按机器进行设置，太大了容易崩溃。
+       export USE_SYSTEM_NCCL=ON：设置一个环境变量 USE_SYSTEM_NCCL 的值为 ON，表明使用系统中已安装的 NCCL 库。
+       export USE_DISTRIBUTED=1 :PyTorch 会启用分布式训练支持
+          export USE_DISTRIBUTED=1    # 启用分布式支持（必须）
+          export USE_MPI=1           # 启用 OpenMPI 后端 yum install openmpi openmpi-devel
+          export USE_CUDA=1          # 若需 GPU 支持
+          export USE_NCCL=1
+          export USE_GLOO=0          # 可选：禁用 Gloo 后端（若不需要）
+          OpenMPI 后端需通过 USE_MPI=1 单独启用，并依赖 OpenMPI 的安装。
+          根据需求灵活配置后端（Gloo/NCCL/MPI），避免冗余功能。
+
+       pip wheel . (打包???)
+
+7、安装vllm 0.8.1（会占用很多CPU和内存 free -h）
     git clone https://github.com/vllm-project/vllm.git
     cd vllm
     python use_existing_torch.py
@@ -132,6 +243,7 @@ show_channel_urls: true
        ====》貌似可以忽略
     2、nvcc error   : '"$CICC_PATH/cicc"' died due to signal 9 (Kill signal)
        ====》MAX_JOBS太大，导致内存不足，改成MAX_JOBS=2或者放大内存
-
-
-
+    3、 /usr/bin/ld: final link failed: No space left on device
+        collect2: error: ld returned 1 exit status
+        ninja: build stopped: subcommand failed.
+       ====》磁盘空间不足

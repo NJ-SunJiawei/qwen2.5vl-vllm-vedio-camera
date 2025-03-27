@@ -56,7 +56,8 @@ NVIDIA和CUDA 版本的选择，以torch和vllm能支持的版本为主选择，
     wget https://developer.download.nvidia.com/compute/cuda/12.2.2/local_installers/cuda_12.2.2_535.104.05_linux.run
     sudo sh cuda_12.2.2_535.104.05_linux.run --silent --toolkit
 
-    # 安装cuDNN和NCCL（需从NVIDIA官网下载）
+    # 安装cuDNN和NCCL（需从NVIDIA官网下载） #http://developer.download.nvidia.com/compute/redist/cudnn/
+                                            #https://developer.nvidia.com/rdp/cudnn-archive
     tar -xzf cudnn-linux-x86_64-8.9.6.50_cuda12-archive.tar.xz
     sudo cp -r cudnn-*-archive/include/* /usr/local/cuda/include/
     sudo cp -r cudnn-*-archive/lib/* /usr/local/cuda/lib64/
