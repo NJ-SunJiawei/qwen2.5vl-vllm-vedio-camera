@@ -280,10 +280,10 @@ show_channel_urls: true
 --   C++ compiler version  : 12.3.1
 --   Using ccache if found : ON
 --   Found ccache          : CCACHE_PROGRAM-NOTFOUND
---   CXX flags             :  -D_GLIBCXX_USE_CXX11_ABI=1 -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DLIBKINETO_NOROCTRACER -DLIBKINETO_NOXPUPTI=ON -DUSE_PYTORCH_QNNPACK -DAT_BUILD_ARM_VEC256_WITH_SLEEF -DUSE_XNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=old-style-cast -Wno-missing-braces -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-stringop-overflow
---   Shared LD flags       :  -Wl,--no-as-needed -rdynamic
+--   CXX flags             : -ffunction-sections -fdata-sections -D_GLIBCXX_USE_CXX11_ABI=1 -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DLIBKINETO_NOROCTRACER -DLIBKINETO_NOXPUPTI=ON -DUSE_PYTORCH_QNNPACK -DAT_BUILD_ARM_VEC256_WITH_SLEEF -DUSE_XNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=old-style-cast -Wno-missing-braces -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-stringop-overflow
+--   Shared LD flags       : -T/home/pytorch/cmake/linker_script.ld -Wl,--no-as-needed -rdynamic
 --   Static LD flags       :
---   Module LD flags       :
+--   Module LD flags       : -T/home/pytorch/cmake/linker_script.ld
 --   Build type            : Release
 --   Compile definitions   : CAFFE2_PERF_WITH_SVE=1;ONNX_ML=1;ONNXIFI_ENABLE_EXT=1;ONNX_NAMESPACE=onnx_torch;HAVE_MMAP=1;_FILE_OFFSET_BITS=64;HAVE_SHM_OPEN=1;HAVE_SHM_UNLINK=1;HAVE_MALLOC_USABLE_SIZE=1;USE_EXTERNAL_MZCRC;MINIZ_DISABLE_ZIP_READER_CRC32_CHECKS;FLASHATTENTION_DISABLE_ALIBI;AT_BUILD_ARM_VEC256_WITH_SLEEF
 --   CMAKE_PREFIX_PATH     : /root/anaconda3/envs/vllm/lib/python3.11/site-packages;/root/anaconda3/envs/vllm:;/usr/local/cuda;/usr/local/cuda;/usr/local/cuda;/usr/local/cuda
@@ -309,8 +309,11 @@ show_channel_urls: true
 --   BUILD_LITE_INTERPRETER: OFF
 --   INTERN_BUILD_MOBILE   :
 --   TRACING_BASED         : OFF
---   USE_BLAS              : 0
---   USE_LAPACK            : 0
+--   USE_BLAS              : 1
+--     BLAS                : open
+--     BLAS_HAS_SBGEMM     :
+--   USE_LAPACK            : 1
+--     LAPACK              : open
 --   USE_ASAN              : OFF
 --   USE_TSAN              : OFF
 --   USE_CPP_CODE_COVERAGE : OFF
@@ -344,7 +347,7 @@ show_channel_urls: true
 --   USE_XPU               : OFF
 --   USE_ROCM              : OFF
 --   BUILD_NVFUSER         :
---   USE_EIGEN_FOR_BLAS    : ON
+--   USE_EIGEN_FOR_BLAS    :
 --   USE_FBGEMM            : OFF
 --     USE_FAKELOWP          : OFF
 --   USE_KINETO            : ON
@@ -355,7 +358,7 @@ show_channel_urls: true
 --   USE_PYTORCH_METAL_EXPORT     : OFF
 --   USE_MPS               : OFF
 --   CAN_COMPILE_METAL     :
---   USE_MKL               : OFF
+--   USE_MKL               :
 --   USE_MKLDNN            : OFF
 --   USE_UCC               : OFF
 --   USE_ITT               : OFF
@@ -377,7 +380,7 @@ show_channel_urls: true
 --     USE_GLOO_WITH_OPENSSL : OFF
 --     USE_TENSORPIPE        : ON
 --   Public Dependencies  :
---   Private Dependencies : Threads::Threads;pthreadpool;cpuinfo;pytorch_qnnpack;nnpack;XNNPACK;microkernels-prod;fp16;caffe2::openmp;tensorpipe;nlohmann;gloo;rt;fmt::fmt-header-only;kineto;gcc_s;gcc;dl
+--   Private Dependencies : Threads::Threads;/usr/lib64/libopenblas.so;pthreadpool;cpuinfo;pytorch_qnnpack;nnpack;XNNPACK;microkernels-prod;fp16;caffe2::openmp;tensorpipe;nlohmann;gloo;rt;fmt::fmt-header-only;kineto;gcc_s;gcc;dl
 --   Public CUDA Deps.    :
 --   Private CUDA Deps.   : caffe2::curand;caffe2::cufft;caffe2::cublas;torch::cudnn;__caffe2_nccl;tensorpipe_cuda;gloo_cuda;fmt::fmt-header-only;/usr/local/cuda/lib64/libcudart.so;CUDA::cusparse;CUDA::cufft;ATEN_CUDA_FILES_GEN_LIB
 --   USE_COREML_DELEGATE     : OFF
@@ -387,6 +390,8 @@ show_channel_urls: true
 -- Performing Test HAS_WMISSING_PROTOTYPES - Failed
 -- Performing Test HAS_WERROR_MISSING_PROTOTYPES
 -- Performing Test HAS_WERROR_MISSING_PROTOTYPES - Failed
+-- Configuring done (59.7s)
+-- Generating done (2.5s)
 
 '''
 
