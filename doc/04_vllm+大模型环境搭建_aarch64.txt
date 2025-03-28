@@ -150,9 +150,34 @@ show_channel_urls: true
     2）安装magma加速 https://anaconda.org/pytorch/repo
         #conda install mkl mkl-include 没用 CPU 数学加速（Intel 优化）
         #pip install mkl-static mkl-include 没用 CPU 数学加速（Intel 优化）
-        wget https://anaconda.org/pytorch/magma-cuda126/2.6.1/download/linux-64/magma-cuda126-2.6.1-1.tar.bz2
-        conda install  --use-local  magma-cuda126-2.6.1-1.tar.bz2
+        wget https://anaconda.org/pytorch/magma-cuda126/2.6.1/download/linux-64/magma-cuda126-2.6.1-1.tar.bz2 （x86不能用）
+        conda install  --use-local  magma-cuda126-2.6.1-1.tar.bz2（x86不能用）
+            conda list|grep magma-cuda126
+            conda uninstall magma-cuda126
 
+        git clone https://github.com/icl-utk-edu/magma.git ✔✔✔ 当torch需要blas加速才需要编译
+        yum install -y  openblas-devel blas-devel lapack-devel
+        ls /usr/lib64/libopenblas.*
+        -----------------------------------
+        cd magma
+        cp make.inc-examples/make.inc.openblas make.inc
+        vi make.inc
+        '''
+        OPENBLASDIR ?= /usr
+        GPU_TARGET = sm_50 sm_60 sm_70 sm_75 sm_80 sm_89 sm_90  指定支持的算力 ,还要查看nvcc --list-gpu-arch
+        '''
+        mkdir /usr/local/magma
+        make -j4 prefix=/usr/local/magma
+        make install
+
+        -DGPU_TARGET='target', where target includes one or more of:
+            Kepler, Maxwell, Pascal, Volta, Turing, Ampere
+            or valid sm_[0-9][0-9] for NVIDIA GPUs.
+             sm_30 sm_35 sm_50 sm_60 sm_70 sm_75 sm_80 sm_89 sm_90 sm_90a
+
+        检查架构：ar -t libmagma.a
+                  ar -x libmagma.a magma_generated_cpotf2_kernels_var.cu.o
+                  file magma_generated_cpotf2_kernels_var.cu.o
     2) 安装 cuDNN #https://blog.csdn.net/YY007H/article/details/134772564
        下载页面 #https://developer.nvidia.com/rdp/cudnn-archive
         # 解压 cuDNN 包（以 cuDNN 8.9.7 为例）网页下载
@@ -186,6 +211,11 @@ show_channel_urls: true
        #递归下载其中的链接包
        git submodule sync
        git submodule update --init --recursive
+       export USE_PRIORITIZED_TEXT_FOR_LD=1
+       export USE_BLAS=1
+       export BLAS=OpenBLAS
+       export USE_LAPACK=1
+       export USE_MAGMA=1
        export USE_DISTRIBUTED=1
        export USE_CUDA=1
        export USE_NCCL=1
@@ -211,12 +241,22 @@ show_channel_urls: true
        # 后台打印
        nohup python setup.py bdist_wheel --cmake > build.log 2>&1 &
 
+
+       报错1：/root/anaconda3/envs/vllm/lib/libstdc++.so.6: error: version lookup error: version `GLIBCXX_3.4.30' not found (required by /home/pytorch/build/lib/libtorch_cpu.so) (continued
+             排查：strings /root/anaconda3/envs/vllm/lib/libstdc++.so.6 | grep GLIBCXX
+                   strings /usr/lib64/libstdc++.so.6 | grep GLIBCXX
+             解决：ln -sf /usr/lib64/libstdc++.so.6 /root/anaconda3/envs/vllm/lib/libstdc++.so.6
+
        export CMAKE_CUDA_ARCHITECTURES=native #自动检测本地 GPU 架构：CMake 会通过检测当前机器的 GPU 型号，自动选择对应的计算能力（如 sm_86）。仅编译本地 GPU 支持的代码：生成的二进制文件仅包含当前机器 GPU 架构的代码，无法在其他架构 GPU 上高效运行。
        export USE_QNNPACK=1    # 建议启用（ARM cpu量化优化）
        export USE_XNNPACK=1    # 建议启用（ARM cpu通用优化）
        export USE_CUDA=1：用于设置一个名为 USE_CUDA 的环境变量，并将其值设置为 1。可能用于告知后续的脚本或程序，在构建过程中需要使用 CUDA 进行加速或其他相关操作。
        export MAX_JOBS=4：（4~推荐32G内存）设置一个名为 MAX_JOBS 的环境变量，并将其值设置为 4，可能用于指定并行编译任务的最大数量。这个按机器进行设置，太大了容易崩溃。
        export USE_SYSTEM_NCCL=ON：设置一个环境变量 USE_SYSTEM_NCCL 的值为 ON，表明使用系统中已安装的 NCCL 库。
+       export USE_BLAS=1
+       export BLAS=OpenBLAS
+       export USE_LAPACK=1
+       export USE_MAGMA=1 #OpenBLAS加速
        export USE_DISTRIBUTED=1 :PyTorch 会启用分布式训练支持
           export USE_DISTRIBUTED=1    # 启用分布式支持（必须）
           export USE_MPI=1           # 启用 OpenMPI 后端 yum install openmpi openmpi-devel
