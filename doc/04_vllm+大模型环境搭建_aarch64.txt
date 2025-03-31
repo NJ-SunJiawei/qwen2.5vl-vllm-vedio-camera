@@ -127,7 +127,7 @@ show_channel_urls: true
     # 验证GPU支持
     python -c "import torch; print(torch.cuda.device_count())"
     python -c "import torch; print(torch.__version__); print(torch.__path__)"
-
+    python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0)); print(torch.cuda.get_arch_list())"
     '''
     import torch
     print(torch.__version__)
@@ -136,11 +136,12 @@ show_channel_urls: true
     print(torch.cuda.get_arch_list())  # 应包含 sm_75
     '''
 
-
     1、UserWarning: Can't initialize NVML
       warnings.warn("Can't initialize NVML")
     重新安装nvidia驱动
 
+    pip list
+    pip uninstall torch
 
     2、Tesla T4 with CUDA capability sm_75 is not compatible with the current PyTorch installation.
     The current PyTorch install supports CUDA capabilities sm_50 sm_80 sm_86 sm_89 sm_90 sm_90a.
@@ -202,8 +203,8 @@ show_channel_urls: true
            cp -r nccl_*/lib/* /usr/local/cuda/lib64/
            cp nccl_*/include/* /usr/local/cuda/include/
 
-    3) cmake源码安装（注意版本> 3.26.0）
-    3) conda install ninja #cmake
+    3) conda install cmake 或者cmake源码安装（注意版本> 3.26.0）
+    3) conda install ninja  #默认使用，python setup.py install --cmake-only 关闭
 
     4) git clone --recursive https://github.com/pytorch/pytorch
        cd pytorch
@@ -211,6 +212,7 @@ show_channel_urls: true
        #递归下载其中的链接包
        git submodule sync
        git submodule update --init --recursive
+
        export USE_PRIORITIZED_TEXT_FOR_LD=1
        export USE_BLAS=1
        export BLAS=OpenBLAS
@@ -230,23 +232,31 @@ show_channel_urls: true
        export TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9;9.0"
        export CMAKE_CUDA_ARCHITECTURES="75;80;86;89;90"
        pip  --default-timeout=1000 install -r requirements.txt -i https://mirrors.huaweicloud.com/repository/pypi/simple
+       ln -sf /usr/lib64/libstdc++.so.6 /root/anaconda3/envs/vllm/lib/libstdc++.so.6
        # 清理安装
        python setup.py clean
        # 直接安装
-       python setup.py install --cmake
-       # 使用 ninja 加速编译：
-       python setup.py install --cmake
+       python setup.py install
+       python setup.py install --cmake 重新编译
        # 或者 编译成 whl安装文件，编译成功后在dist文件下面，可通过 pip install torch-xxxx.whl 安装
-       python setup.py bdist_wheel --cmake
+       python setup.py bdist_wheel
+       python setup.py bdist_wheel --cmake 重新编译
        # 后台打印
-       nohup python setup.py bdist_wheel --cmake > build.log 2>&1 &
+       nohup python setup.py bdist_wheel > build.log 2>&1 &
+       nohup python setup.py bdist_wheel --cmake > build.log 2>&1 &     重新编译
 
+       安装包目录 pytorch/dist/
 
        报错1：/root/anaconda3/envs/vllm/lib/libstdc++.so.6: error: version lookup error: version `GLIBCXX_3.4.30' not found (required by /home/pytorch/build/lib/libtorch_cpu.so) (continued
              排查：strings /root/anaconda3/envs/vllm/lib/libstdc++.so.6 | grep GLIBCXX
                    strings /usr/lib64/libstdc++.so.6 | grep GLIBCXX
-             解决：ln -sf /usr/lib64/libstdc++.so.6 /root/anaconda3/envs/vllm/lib/libstdc++.so.6
+             解决：ln -sf /usr/lib64/libstdc++.so.6 /root/anaconda3/envs/vllm/lib/libstdc++.so.6 ✔✔✔
+       报错2：/root/anaconda3/envs/vllm/compiler_compat/ld: cannot find LINKER_VERSION: No such file or directory
+             排查：cat /home/pytorch/cmake/linker_script.ld|grep  LINKER_VERSION
+             解决:修改 linker_script.ld 文件  .comment 0 (INFO) : { *(.comment); }   怀疑conda环境的问题，链接器脚本与当前工具链不兼容的问题 ld --version
+             方法二：不使用conda环境，直接使用主机gcc，未尝试
 
+       定义在setup.py里：
        export CMAKE_CUDA_ARCHITECTURES=native #自动检测本地 GPU 架构：CMake 会通过检测当前机器的 GPU 型号，自动选择对应的计算能力（如 sm_86）。仅编译本地 GPU 支持的代码：生成的二进制文件仅包含当前机器 GPU 架构的代码，无法在其他架构 GPU 上高效运行。
        export USE_QNNPACK=1    # 建议启用（ARM cpu量化优化）
        export USE_XNNPACK=1    # 建议启用（ARM cpu通用优化）
@@ -394,7 +404,6 @@ show_channel_urls: true
 -- Generating done (2.5s)
 
 '''
-
 
 
 7、安装vllm 0.8.1（会占用很多CPU和内存 free -h）
