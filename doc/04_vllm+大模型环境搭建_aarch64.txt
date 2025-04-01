@@ -1,3 +1,6 @@
+docker run -itd -e TMOUT=0 --gpus=all  --name vllm  -p 8000:8000 openeuler/openeuler:latest
+docker exec -e TMOUT=0 -it vllm bash
+
 #查看显卡支持算力（sm）：https://developer.nvidia.com/cuda-gpus ✔✔✔
 #查看CUDA库支持的算力（sm）：nvcc --list-gpu-arch ✔✔✔
 #参考：https://docs.nvidia.com/cuda/ampere-compatibility-guide/index.html
@@ -11,6 +14,7 @@ nvidia-smi -L  查看GPU类型
     dnf groupinstall -y "Development Tools"
     yum install -y gcc g++ cmake make python-pip python3-devel ninja-build.aarch64 numactl-devel.aarch64 wget git
     dnf install -y kernel-devel kernel-headers  tar zip pciutils
+    yum install iputils #ping工具
 
 2、安装conda
    Linux 用户，可以下载 Anaconda3-2022.05-Linux-aarch64.sh
@@ -406,6 +410,23 @@ show_channel_urls: true
 
 '''
 
+6、安装xformers
+    # (Optional) Makes the build much faster
+    pip install ninja
+
+    # Set TORCH_CUDA_ARCH_LIST if running and building on different GPU types
+    export MAX_JOBS=3
+    export TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9;9.0"
+
+    pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=xformers
+    或者
+    git clone --recursive https://github.com/facebookresearch/xformers.git
+    git submodule sync
+    git submodule update --init --recursive
+    cd xformers &&  python setup.py bdist_wheel
+    # (this can take dozens of minutes)
+
+
 
 7、安装vllm 0.8.1（会占用很多CPU和内存 free -h）
     有时候git clone thirdparty会超时：https://www.cnblogs.com/balabalabubalabala/p/17065553.html
@@ -439,4 +460,41 @@ show_channel_urls: true
         collect2: error: ld returned 1 exit status
         ninja: build stopped: subcommand failed.
        ====》磁盘空间不足
+       ====》find / -type f -size +100M 查找大文件
     4、/bin/sh: line 1: lsmod: command not found
+
+    vllm官方使用说明：https://docs.vllm.ai/en/stable/index.html
+
+8、下载大模型
+    pip install huggingface-hub -i https://mirrors.huaweicloud.com/repository/pypi/simple
+    export HF_ENDPOINT="https://hf-mirror.com"
+    huggingface-cli download deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
+    大文件加速下载（貌似也没多快）：
+    pip install "huggingface_hub[hf_transfer]" -i https://mirrors.huaweicloud.com/repository/pypi/simple
+    export HF_ENDPOINT="https://hf-mirror.com"
+    HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
+
+    export HF_HUB_OFFLINE=1    #使用离线模型
+    启动vllm server：
+    python -m vllm.entrypoints.openai.api_server \
+        --served-model-name deepseek-r1:14b \
+        --model deepseek-ai/DeepSeek-R1-Distill-Qwen-14B \
+        --trust-remote-code \
+        --host 0.0.0.0 \
+        --port 8080 \
+        --max-model-len 4096 \
+        --tensor-parallel-size 1 \
+        --gpu_memory_utilization 0.8 \
+        --enforce-eager \
+        --dtype float16
+
+    报错：ModuleNotFoundError: No module named 'xformers'
+          pip --default-timeout=1000 install xformers -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+    请求数据:
+    curl "http://localhost:8080/v1/chat/completions" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "deepseek-r1:14b",
+      "messages": [{"role": "user", "content": "请介绍一下开源操作系统openEuler"}],
+    }'
