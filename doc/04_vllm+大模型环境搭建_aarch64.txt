@@ -416,17 +416,19 @@ show_channel_urls: true
     cd vllm
     python use_existing_torch.py
     ###新版不需要执行：pip --default-timeout=1000 install -r requirements-build.txt -i https://mirrors.huaweicloud.com/repository/pypi/simple
-    MAX_JOBS=3 pip --default-timeout=1000 install -e . --no-build-isolation -i https://mirrors.huaweicloud.com/repository/pypi/simple
-    或者 MAX_JOBS=3 pip --default-timeout=1000 install -e . --no-build-isolation -i https://pypi.tuna.tsinghua.edu.cn/simple
+    MAX_JOBS=3 pip --default-timeout=1000 install -e . --no-build-isolation -v -i https://mirrors.huaweicloud.com/repository/pypi/simple
+    或者 MAX_JOBS=3 pip --default-timeout=1000 install -e . --no-build-isolation -v -i https://pypi.tuna.tsinghua.edu.cn/simple
 
     后台编译：
     export MAX_JOBS=3
-    nohup pip --default-timeout=1000 install -e . --no-build-isolation -i https://pypi.tuna.tsinghua.edu.cn/simple > build.log 2>&1 &
+    nohup pip --default-timeout=1000 install -e . --no-build-isolation -v -i https://pypi.tuna.tsinghua.edu.cn/simple > build.log 2>&1 &
+
+    编译完毕后生成whl包：MAX_JOBS=6 python setup.py bdist_wheel
+    安装包目录 vllmh/dist/
 
     MAX_JOBS=4大概需要12~16G内存
     #VLLM_TARGET_DEVICE=cuda（不配置默认GPU版本）
     #VLLM_TARGET_DEVICE=cpu
-    有时候安装会失败，由于git clone下载依赖repo失败，多试几次或者翻墙
 
     1、Failed to compute shorthash for libnvrtc.so
        ====》https://github.com/pytorch/pytorch/issues/53350
