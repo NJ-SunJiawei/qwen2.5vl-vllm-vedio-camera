@@ -247,6 +247,7 @@ show_channel_urls: true
 
        安装包目录 pytorch/dist/
 
+       conda环境下才会出现的问题：
        报错1：/root/anaconda3/envs/vllm/lib/libstdc++.so.6: error: version lookup error: version `GLIBCXX_3.4.30' not found (required by /home/pytorch/build/lib/libtorch_cpu.so) (continued
              排查：strings /root/anaconda3/envs/vllm/lib/libstdc++.so.6 | grep GLIBCXX
                    strings /usr/lib64/libstdc++.so.6 | grep GLIBCXX
@@ -407,12 +408,21 @@ show_channel_urls: true
 
 
 7、安装vllm 0.8.1（会占用很多CPU和内存 free -h）
+    有时候git clone thirdparty会超时：https://www.cnblogs.com/balabalabubalabala/p/17065553.html
+
+    yum install kmod
+
     git clone https://github.com/vllm-project/vllm.git
     cd vllm
     python use_existing_torch.py
     ###新版不需要执行：pip --default-timeout=1000 install -r requirements-build.txt -i https://mirrors.huaweicloud.com/repository/pypi/simple
     MAX_JOBS=3 pip --default-timeout=1000 install -e . --no-build-isolation -i https://mirrors.huaweicloud.com/repository/pypi/simple
     或者 MAX_JOBS=3 pip --default-timeout=1000 install -e . --no-build-isolation -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+    后台编译：
+    export MAX_JOBS=3
+    nohup pip --default-timeout=1000 install -e . --no-build-isolation -i https://pypi.tuna.tsinghua.edu.cn/simple > build.log 2>&1 &
+
     MAX_JOBS=4大概需要12~16G内存
     #VLLM_TARGET_DEVICE=cuda（不配置默认GPU版本）
     #VLLM_TARGET_DEVICE=cpu
@@ -427,3 +437,4 @@ show_channel_urls: true
         collect2: error: ld returned 1 exit status
         ninja: build stopped: subcommand failed.
        ====》磁盘空间不足
+    4、/bin/sh: line 1: lsmod: command not found
